@@ -2,6 +2,8 @@
 
 A quiet 3D voyage. Sail the dusk sea and gather light before the lamp goes out.
 
+🎮 **[Play Live on GitHub Pages](https://saif-alsaad.github.io/SeaDrift/)**
+
 Built with **React**, **Three.js**, **Vite**, and **Tailwind CSS**.
 
 ---
