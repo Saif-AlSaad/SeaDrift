@@ -187,11 +187,23 @@ const DIFF_TUNING: Record<Difficulty, DiffTune> = {
 /* ---------------- shared wave field (GLSL + JS must match) ---------------- */
 
 function waveH(x: number, z: number, t: number): number {
-  return (
-    0.5 * Math.sin((x * 1.0 + z * 0.35) * 0.14 + t * 0.8) +
-    0.3 * Math.sin((x * -0.6 + z * 1.0) * 0.23 + t * 1.15) +
-    0.16 * Math.sin((x * 0.9 - z * 0.45) * 0.42 + t * 1.9)
-  );
+  // Gerstner-sharpened multi-directional ocean swell
+  const th1 = (x * 0.95 + z * 0.32) * 0.13 + t * 0.82;
+  const s1 = Math.sin(th1);
+  const w1 = 0.52 * (Math.sign(s1) * Math.pow(Math.abs(s1), 1.25));
+
+  const th2 = (x * -0.62 + z * 0.92) * 0.22 + t * 1.18;
+  const s2 = Math.sin(th2);
+  const w2 = 0.32 * (Math.sign(s2) * Math.pow(Math.abs(s2), 1.2));
+
+  const th3 = (x * 0.88 - z * 0.48) * 0.40 + t * 1.85;
+  const s3 = Math.sin(th3);
+  const w3 = 0.17 * (Math.sign(s3) * Math.pow(Math.abs(s3), 1.12));
+
+  const th4 = (x * -0.28 - z * 0.96) * 0.65 + t * 2.4;
+  const w4 = 0.08 * Math.sin(th4);
+
+  return w1 + w2 + w3 + w4;
 }
 
 const GLSL_WAVE = /* glsl */ `
@@ -199,11 +211,22 @@ uniform float uTime;
 uniform float uAmp;
 uniform vec4 uWhirl[2];
 float waveH(vec2 p, float t) {
-  float h = 0.0;
-  h += 0.50 * sin((p.x * 1.00 + p.y * 0.35) * 0.14 + t * 0.80);
-  h += 0.30 * sin((p.x * -0.60 + p.y * 1.00) * 0.23 + t * 1.15);
-  h += 0.16 * sin((p.x * 0.90 - p.y * 0.45) * 0.42 + t * 1.90);
-  return h;
+  float th1 = (p.x * 0.95 + p.y * 0.32) * 0.13 + t * 0.82;
+  float s1 = sin(th1);
+  float w1 = 0.52 * sign(s1) * pow(abs(s1), 1.25);
+
+  float th2 = (p.x * -0.62 + p.y * 0.92) * 0.22 + t * 1.18;
+  float s2 = sin(th2);
+  float w2 = 0.32 * sign(s2) * pow(abs(s2), 1.2);
+
+  float th3 = (p.x * 0.88 - p.y * 0.48) * 0.40 + t * 1.85;
+  float s3 = sin(th3);
+  float w3 = 0.17 * sign(s3) * pow(abs(s3), 1.12);
+
+  float th4 = (p.x * -0.28 - p.y * 0.96) * 0.65 + t * 2.4;
+  float w4 = 0.08 * sin(th4);
+
+  return w1 + w2 + w3 + w4;
 }
 float surfH(vec2 p) {
   float h = waveH(p, uTime) * uAmp;
@@ -212,30 +235,6 @@ float surfH(vec2 p) {
     h -= uWhirl[i].w * ${WHIRL_DEPTH.toFixed(2)} * exp(-dot(d, d) / (uWhirl[i].z * uWhirl[i].z * ${WHIRL_K.toFixed(2)}));
   }
   return h;
-}
-`;
-
-const GLSL_SKY = /* glsl */ `
-uniform vec3 uHorizon;
-uniform vec3 uMid;
-uniform vec3 uZenith;
-uniform vec3 uHaze;
-uniform vec3 uSunColor;
-uniform vec3 uSunDir;
-uniform float uSunGlare;
-uniform float uStorm;
-uniform float uFlash;
-vec3 skyColor(vec3 d) {
-  float y = max(d.y, 0.0);
-  float s = max(dot(d, uSunDir), 0.0);
-  float hz = 1.0 - smoothstep(0.0, 0.34, y);
-  vec3 warm = mix(uHaze, uHorizon, pow(s, 1.8));
-  vec3 col = mix(warm, uMid, smoothstep(0.0, 0.2, y));
-  col = mix(col, uZenith, smoothstep(0.08, 0.62, y));
-  col += uSunColor * (pow(s, 9.0) * 0.21 * hz + pow(s, 72.0) * 0.34) * uSunGlare;
-  col = mix(col, mix(col, vec3(dot(col, vec3(0.3, 0.5, 0.2))), 0.6) * 0.24 + vec3(0.010, 0.015, 0.019), uStorm * 0.85);
-  col += uFlash * vec3(0.10, 0.13, 0.2);
-  return col;
 }
 `;
 
@@ -266,6 +265,48 @@ float fbm(vec2 p) {
     a *= 0.5;
   }
   return v;
+}
+`;
+
+const GLSL_SKY = /* glsl */ `
+uniform vec3 uHorizon;
+uniform vec3 uMid;
+uniform vec3 uZenith;
+uniform vec3 uHaze;
+uniform vec3 uSunColor;
+uniform vec3 uSunDir;
+uniform float uSunGlare;
+uniform float uStorm;
+uniform float uFlash;
+${GLSL_NOISE}
+vec3 skyColor(vec3 d) {
+  float y = max(d.y, 0.0);
+  float s = max(dot(d, uSunDir), 0.0);
+  float antiSun = max(dot(d, vec3(-uSunDir.x, uSunDir.y, -uSunDir.z)), 0.0);
+  float hz = 1.0 - smoothstep(0.0, 0.34, y);
+  vec3 warm = mix(uHaze, uHorizon, pow(s, 1.8));
+  // Twilight magenta belt opposite sunset
+  vec3 twilightBelt = vec3(0.34, 0.14, 0.28) * pow(antiSun, 2.2) * (1.0 - smoothstep(0.05, 0.45, y)) * (1.0 - uStorm);
+  vec3 col = mix(warm + twilightBelt, uMid, smoothstep(0.0, 0.22, y));
+  col = mix(col, uZenith, smoothstep(0.08, 0.62, y));
+  // Warm atmospheric halo and distinct sun disc
+  col += uSunColor * (pow(s, 9.0) * 0.22 * hz + pow(s, 64.0) * 0.45) * uSunGlare;
+  float sunDisc = smoothstep(0.9990, 0.9997, s);
+  col += uSunColor * sunDisc * 2.8 * uSunGlare * (1.0 - uStorm * 0.85);
+  // Procedural twinkling stars in upper atmosphere
+  if (d.y > 0.06 && uStorm < 0.7) {
+    vec2 starCoord = d.xz / (d.y + 0.14) * 88.0;
+    float sn = hash21(floor(starCoord));
+    if (sn > 0.982) {
+      float twinkle = 0.45 + 0.55 * sin(sn * 628.0 + uTime * (1.8 + sn * 3.5));
+      float star = smoothstep(0.08, 0.0, length(fract(starCoord) - 0.5)) * twinkle;
+      vec3 starColor = mix(vec3(0.85, 0.92, 1.0), vec3(1.0, 0.82, 0.65), fract(sn * 17.3));
+      col += starColor * star * smoothstep(0.06, 0.42, d.y) * (0.35 + 0.65 * (1.0 - uSunGlare * 0.65));
+    }
+  }
+  col = mix(col, mix(col, vec3(dot(col, vec3(0.3, 0.5, 0.2))), 0.6) * 0.24 + vec3(0.010, 0.015, 0.019), uStorm * 0.85);
+  col += uFlash * vec3(0.10, 0.13, 0.2);
+  return col;
 }
 `;
 
@@ -308,8 +349,9 @@ const C = {
   teal: new THREE.Color(0.22, 0.95, 0.78),
   gold: new THREE.Color(1.0, 0.85, 0.5),
   crimson: new THREE.Color(1.0, 0.18, 0.12),
-  foam: new THREE.Color(0.5, 0.56, 0.58),
-  spray: new THREE.Color(0.22, 0.27, 0.3),
+  foam: new THREE.Color(0.68, 0.74, 0.76),
+  spray: new THREE.Color(0.58, 0.76, 0.82),
+  bio: new THREE.Color(0.15, 0.92, 0.85),
   wood: new THREE.Color(0.45, 0.26, 0.11),
   bolt: new THREE.Color(0.55, 0.72, 1.0),
   fogCalm: new THREE.Color("#6b7c87"),
@@ -672,13 +714,13 @@ export class GameEngine {
     const dpr = window.devicePixelRatio || 1;
     this.levels = this.isMobile
       ? [
-          { bloom: false, dpr: Math.min(dpr, 1.5) },
+          { bloom: true, dpr: Math.min(dpr, 1.35) },
           { bloom: false, dpr: Math.min(dpr, 1.15) },
-          { bloom: false, dpr: Math.min(dpr, 0.85) },
+          { bloom: false, dpr: Math.min(dpr, 0.9) },
         ]
       : [
           { bloom: true, dpr: Math.min(dpr, 2) },
-          { bloom: true, dpr: Math.min(dpr, 1.25) },
+          { bloom: true, dpr: Math.min(dpr, 1.35) },
           { bloom: false, dpr: 1 },
         ];
     const params = new URLSearchParams(window.location.search);
@@ -1319,6 +1361,12 @@ export class GameEngine {
           body *= 1.0 - uStorm * 0.5;
           vec3 col = mix(body, refl, F);
 
+          // --- subsurface scattering through the wave crests towards the sun ---
+          vec3 sssDir = normalize(uSunDir + N * 0.35);
+          float sssDot = pow(clamp(dot(V, -sssDir), 0.0, 1.0), 3.2);
+          vec3 sssCol = mix(vec3(0.04, 0.38, 0.36), vec3(0.12, 0.64, 0.54), calm) * uAmp;
+          col += sssCol * sssDot * crest * (0.75 + 0.45 * uSunGlare);
+
           // --- controlled sun glitter (gentle on the eyes) ---
           float sd = max(dot(R, uSunDir), 0.0);
           col += uSunColor * pow(sd, mix(95.0, 620.0, fFine)) * mix(0.65, 3.6, fFine) * calm * uSunGlare;
@@ -1354,6 +1402,12 @@ export class GameEngine {
             float hullF = smoothstep(1.55, 1.0, hullD) * smoothstep(0.35, 0.7, fn + 0.25);
             col *= 1.0 - 0.45 * smoothstep(2.0, 0.7, hullD);
             foam += uBoat.w * ((vArm * 0.8 + coreW * 0.6) * (0.3 + 0.7 * fn) + hullF * 0.6);
+
+            // Bioluminescent plankton shimmer along the Kelvin wake arms
+            float bioMask = (vArm * 0.7 + coreW * 0.5) * smoothstep(60.0, 3.0, back) * uBoat.w;
+            float bioSparkle = vnoise(p * 3.8 + vec2(t * 1.2, -t * 0.7)) * vnoise(p * 7.5 - vec2(t * 1.8));
+            vec3 bioCol = vec3(0.12, 0.92, 0.82) * (1.4 + 1.1 * sin(t * 3.2 + p.y * 0.6));
+            col += bioCol * bioMask * smoothstep(0.32, 0.72, bioSparkle) * (0.5 + 0.5 * uStorm);
           }
 
           // --- whirlpools ---
@@ -3744,6 +3798,23 @@ export class GameEngine {
             0.45 + Math.random() * 0.35,
             7,
             1.2,
+          );
+        }
+        // Stern bioluminescent wake sparks
+        if (Math.random() < 0.45) {
+          const wakeSide = (Math.random() - 0.5) * 1.4;
+          this.emit(
+            bx + wakeSide,
+            this.boatY + 0.05,
+            bz + 1.8 + Math.random() * 0.8,
+            wakeSide * 0.4,
+            0.15 + Math.random() * 0.3,
+            -this.speed * 0.35,
+            C.bio,
+            0.05 + Math.random() * 0.08,
+            0.6 + Math.random() * 0.4,
+            1.2,
+            0.8,
           );
         }
       }
