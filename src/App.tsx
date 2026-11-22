@@ -808,6 +808,11 @@ export default function App() {
 
             {/* hero */}
             <div className="anim-fadeUp flex flex-col items-center text-center">
+              <img
+                src="./icon.png"
+                alt="SeaDrift"
+                className="mb-4 h-20 w-20 rounded-2xl border border-foam/20 shadow-[0_0_32px_rgba(255,180,84,0.35)] transition-transform duration-300 hover:scale-105"
+              />
               <div className="mb-3 flex items-center justify-center gap-2 text-[10px] font-semibold tracking-[0.36em] text-foam/70">
                 {I.boat("h-4 w-4 shrink-0 text-amber")}
                 DUSK SEA VOYAGE
