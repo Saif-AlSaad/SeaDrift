@@ -255,7 +255,7 @@ function Segmented<T extends string>({
   onChange: (v: T) => void;
 }) {
   return (
-    <div className="grid auto-cols-fr grid-flow-col gap-1 rounded-lg border border-foam/12 bg-ink/60 p-1">
+    <div className="grid auto-cols-fr grid-flow-col gap-1.5 rounded-xl border border-foam/10 bg-[#02090d]/70 p-1 shadow-inner backdrop-blur-xs">
       {options.map((o) => {
         const active = o.value === value;
         return (
@@ -263,10 +263,10 @@ function Segmented<T extends string>({
             key={o.value}
             type="button"
             onClick={() => onChange(o.value)}
-            className={`rounded-md px-2.5 py-1.5 text-xs font-semibold transition-all ${
+            className={`relative rounded-lg px-2.5 py-1.5 text-xs font-semibold tracking-wide transition-all duration-200 ${
               active
-                ? "bg-amber text-[#241005] shadow-sm"
-                : "text-foam/65 hover:bg-foam/[0.06] hover:text-foam"
+                ? "bg-gradient-to-b from-[#ffc875] to-[#ff9b40] text-[#1c0c03] font-bold shadow-[0_2px_10px_rgba(255,160,60,0.35)] scale-[1.02]"
+                : "text-foam/60 hover:bg-foam/[0.07] hover:text-foam active:scale-[0.98]"
             }`}
           >
             {o.label}
@@ -865,36 +865,7 @@ export default function App() {
               </div>
             </div>
 
-            {/* unobtrusive control hint */}
-            <div className="anim-fadeUp mt-8 flex flex-wrap items-center justify-center gap-x-4 gap-y-1.5 rounded-full border border-foam/12 bg-[#05141a]/60 px-5 py-2 text-xs text-foam/65 backdrop-blur-sm">
-              {IS_TOUCH ? (
-                <>
-                  <span>
-                    {settings.touchControl === "tilt"
-                      ? "Tilt your phone to steer"
-                      : settings.touchControl === "follow"
-                        ? "Touch where you want to sail"
-                        : "Slide your thumb anywhere to steer"}
-                  </span>
-                  <span className="text-foam/25">·</span>
-                  <span>tap ❚❚ to pause</span>
-                </>
-              ) : (
-                <>
-                  <span>
-                    <kbd>◀</kbd> <kbd>▶</kbd> / <kbd>A</kbd> <kbd>D</kbd> or drag to steer
-                  </span>
-                  <span className="hidden text-foam/25 sm:inline">·</span>
-                  <span>
-                    <kbd>P</kbd> pause
-                  </span>
-                  <span className="hidden text-foam/25 sm:inline">·</span>
-                  <span>
-                    <kbd>R</kbd> restart
-                  </span>
-                </>
-              )}
-            </div>
+            <div />
           </div>
         </div>
       )}
@@ -1062,7 +1033,7 @@ export default function App() {
       {/* ------------------------- SETTINGS MODAL ------------------------- */}
       {modal === "settings" && (
         <div
-          className="absolute inset-0 z-20 overflow-y-auto bg-ink/65 px-4 py-6 backdrop-blur-xs"
+          className="anim-modal-backdrop absolute inset-0 z-30 overflow-y-auto bg-ink/70 px-4 py-6"
           onClick={() => {
             setModal("none");
             setConfirmClear(false);
@@ -1070,34 +1041,46 @@ export default function App() {
         >
           <div className="flex min-h-full items-center justify-center">
             <div
-              className="panel anim-popIn w-full max-w-md p-6"
+              className="glass-modal anim-modal-card w-full max-w-lg p-6 sm:p-7"
               onClick={(e) => e.stopPropagation()}
             >
-              <div className="flex items-center justify-between">
-                <h2 className="flex items-center gap-2 font-display text-sm font-bold tracking-[0.24em] text-lumen">
-                  {I.gear("h-4 w-4")} SETTINGS
-                </h2>
+              {/* Header */}
+              <div className="flex items-center justify-between border-b border-foam/10 pb-4">
+                <div className="flex items-center gap-2.5">
+                  <div className="flex h-9 w-9 items-center justify-center rounded-xl border border-amber/30 bg-amber/10 text-amber shadow-[0_0_15px_rgba(255,180,84,0.2)]">
+                    {I.gear("h-5 w-5")}
+                  </div>
+                  <div>
+                    <h2 className="font-display text-sm font-bold tracking-[0.22em] text-foam">
+                      SETTINGS
+                    </h2>
+                    <p className="text-[11px] text-foam/50 font-normal">Voyage tuning, audio & graphics</p>
+                  </div>
+                </div>
                 <button
                   onClick={() => {
                     setModal("none");
                     setConfirmClear(false);
                   }}
-                  aria-label="Close"
-                  className="flex h-8 w-8 items-center justify-center rounded-full text-foam/60 hover:bg-foam/10 hover:text-foam"
+                  aria-label="Close settings"
+                  className="icon-btn flex h-9 w-9 items-center justify-center text-foam/60 transition-transform duration-150 hover:rotate-90 hover:text-foam"
                 >
                   {I.close("h-4 w-4")}
                 </button>
               </div>
 
-              <div className="mt-5 space-y-5">
-                {/* Difficulty */}
-                <div>
-                  <div className="mb-2 flex items-center justify-between">
-                    <span className="text-xs font-semibold uppercase tracking-[0.18em] text-foam/75">
+              <div className="mt-5 space-y-4">
+                {/* 1. Difficulty Card */}
+                <div className="settings-card">
+                  <div className="mb-2.5 flex items-center justify-between">
+                    <span className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-[0.16em] text-foam/85">
+                      <span className="h-1.5 w-1.5 rounded-full bg-amber" />
                       Difficulty
                     </span>
                     {state === "paused" && (
-                      <span className="text-[11px] text-amber/80">Applies immediately</span>
+                      <span className="rounded bg-amber/15 px-2 py-0.5 text-[10px] font-semibold text-amber">
+                        Applies live
+                      </span>
                     )}
                   </div>
                   <Segmented<Difficulty>
@@ -1109,43 +1092,45 @@ export default function App() {
                       { value: "tempest", label: "Tempest (1.9×)" },
                     ]}
                   />
-                  <p className="mt-1.5 text-xs text-foam/50">
+                  <div className="mt-2.5 rounded-lg border border-amber/20 bg-amber/[0.06] p-2.5 text-xs leading-relaxed text-amber/90">
                     {DIFF_INFO[settings.difficulty].desc}
-                  </p>
+                  </div>
                 </div>
 
-                {/* Volume & Mute */}
-                <div>
-                  <div className="mb-2 flex items-center justify-between">
-                    <span className="text-xs font-semibold uppercase tracking-[0.18em] text-foam/75">
-                      Sound Volume
+                {/* 2. Audio Card */}
+                <div className="settings-card">
+                  <div className="mb-2.5 flex items-center justify-between">
+                    <span className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-[0.16em] text-foam/85">
+                      <span className="h-1.5 w-1.5 rounded-full bg-lumen" />
+                      Sound & Audio
                     </span>
                     <button
                       type="button"
                       onClick={() => updateSettings({ muted: !settings.muted })}
-                      className="text-xs font-semibold text-amber hover:underline"
+                      className="inline-flex items-center gap-1.5 rounded-lg border border-foam/15 bg-foam/[0.04] px-2.5 py-1 text-xs font-semibold text-foam/85 transition-colors hover:border-amber/40 hover:bg-amber/10 hover:text-amber"
                     >
-                      {settings.muted
-                        ? "Muted (Unmute)"
-                        : `${Math.round(settings.volume * 100)}% · Mute`}
+                      {settings.muted ? I.soundOff("h-3.5 w-3.5 text-ember") : I.soundOn("h-3.5 w-3.5 text-lumen")}
+                      <span>{settings.muted ? "Muted" : `${Math.round(settings.volume * 100)}%`}</span>
                     </button>
                   </div>
-                  <input
-                    type="range"
-                    min={0}
-                    max={100}
-                    value={settings.muted ? 0 : Math.round(settings.volume * 100)}
-                    onChange={(e) => {
-                      const v = Number(e.target.value) / 100;
-                      updateSettings({ volume: v, muted: v === 0 });
-                    }}
-                    className="h-2 w-full cursor-pointer appearance-none rounded-lg bg-foam/15 accent-amber"
-                  />
+                  <div className="flex items-center gap-3">
+                    <input
+                      type="range"
+                      min={0}
+                      max={100}
+                      value={settings.muted ? 0 : Math.round(settings.volume * 100)}
+                      onChange={(e) => {
+                        const v = Number(e.target.value) / 100;
+                        updateSettings({ volume: v, muted: v === 0 });
+                      }}
+                      className="custom-slider w-full"
+                    />
+                  </div>
                 </div>
 
-                {/* Graphics Quality */}
-                <div>
-                  <div className="mb-2 text-xs font-semibold uppercase tracking-[0.18em] text-foam/75">
+                {/* 3. Graphics Quality Card */}
+                <div className="settings-card">
+                  <div className="mb-2.5 text-xs font-bold uppercase tracking-[0.16em] text-foam/85">
                     Graphics Quality
                   </div>
                   <Segmented<QualitySetting>
@@ -1158,61 +1143,58 @@ export default function App() {
                       { value: "low", label: "Low" },
                     ]}
                   />
-                </div>
-
-                {/* Sun Glare & Screen Shake */}
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <div className="mb-2 text-xs font-semibold uppercase tracking-[0.16em] text-foam/75">
-                      Sun Glare
-                    </div>
-                    <Segmented<"soft" | "minimal">
-                      value={settings.sunGlare}
-                      onChange={(sunGlare) => updateSettings({ sunGlare })}
-                      options={[
-                        { value: "soft", label: "Soft" },
-                        { value: "minimal", label: "Minimal" },
-                      ]}
-                    />
-                  </div>
-                  <div>
-                    <div className="mb-2 text-xs font-semibold uppercase tracking-[0.16em] text-foam/75">
-                      Screen Shake
-                    </div>
-                    <Segmented<"on" | "off">
-                      value={settings.screenShake ? "on" : "off"}
-                      onChange={(v) => updateSettings({ screenShake: v === "on" })}
-                      options={[
-                        { value: "on", label: "On" },
-                        { value: "off", label: "Off" },
-                      ]}
-                    />
-                  </div>
-                </div>
-
-                {IS_TOUCH && (
-                  <div className="space-y-3 border-t border-foam/10 pt-4">
+                  <div className="mt-3.5 grid grid-cols-2 gap-3 border-t border-foam/10 pt-3">
                     <div>
-                      <div className="mb-2 text-xs font-semibold uppercase tracking-[0.18em] text-foam/75">
-                        Touch Steering
+                      <div className="mb-1.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-foam/70">
+                        Sun Glare
                       </div>
-                      <Segmented<TouchControl>
-                        value={settings.touchControl}
-                        onChange={(m) => void chooseSteering(m)}
+                      <Segmented<"soft" | "minimal">
+                        value={settings.sunGlare}
+                        onChange={(sunGlare) => updateSettings({ sunGlare })}
                         options={[
-                          { value: "drag", label: "Slide" },
-                          { value: "follow", label: "Follow" },
-                          { value: "tilt", label: "Tilt" },
+                          { value: "soft", label: "Soft" },
+                          { value: "minimal", label: "Minimal" },
                         ]}
                       />
-                      <p className="mt-1.5 text-xs text-foam/50">{STEER_INFO[settings.touchControl]}</p>
                     </div>
+                    <div>
+                      <div className="mb-1.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-foam/70">
+                        Screen Shake
+                      </div>
+                      <Segmented<"on" | "off">
+                        value={settings.screenShake ? "on" : "off"}
+                        onChange={(v) => updateSettings({ screenShake: v === "on" })}
+                        options={[
+                          { value: "on", label: "On" },
+                          { value: "off", label: "Off" },
+                        ]}
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* 4. Touch Controls (if touch available) */}
+                {IS_TOUCH && (
+                  <div className="settings-card">
+                    <div className="mb-2.5 text-xs font-bold uppercase tracking-[0.16em] text-foam/85">
+                      Touch Steering
+                    </div>
+                    <Segmented<TouchControl>
+                      value={settings.touchControl}
+                      onChange={(m) => void chooseSteering(m)}
+                      options={[
+                        { value: "drag", label: "Slide" },
+                        { value: "follow", label: "Follow" },
+                        { value: "tilt", label: "Tilt" },
+                      ]}
+                    />
+                    <p className="mt-2 text-xs leading-relaxed text-foam/50">{STEER_INFO[settings.touchControl]}</p>
                     {(CAN_VIBRATE || CAN_FULLSCREEN) && (
-                      <div className="grid grid-cols-2 gap-3">
+                      <div className="mt-3.5 grid grid-cols-2 gap-3 border-t border-foam/10 pt-3">
                         {CAN_VIBRATE && (
                           <div>
-                            <div className="mb-2 text-xs font-semibold uppercase tracking-[0.16em] text-foam/75">
-                              Vibration
+                            <div className="mb-1.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-foam/70">
+                              Haptics
                             </div>
                             <Segmented<"on" | "off">
                               value={settings.haptics ? "on" : "off"}
@@ -1226,7 +1208,7 @@ export default function App() {
                         )}
                         {CAN_FULLSCREEN && (
                           <div>
-                            <div className="mb-2 text-xs font-semibold uppercase tracking-[0.16em] text-foam/75">
+                            <div className="mb-1.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-foam/70">
                               Auto Fullscreen
                             </div>
                             <Segmented<"on" | "off">
@@ -1244,40 +1226,38 @@ export default function App() {
                   </div>
                 )}
 
-                {/* Mobile & Native App */}
+                {/* 5. Android APK Card */}
                 {!IS_NATIVE && (
-                  <div className="border-t border-foam/10 pt-4">
-                    <div className="rounded-xl border border-emerald-500/25 bg-emerald-950/30 p-3.5 shadow-xs">
-                      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                        <div className="min-w-0 pr-1">
-                          <div className="flex items-center gap-2">
-                            <span className="text-xs font-bold uppercase tracking-[0.16em] text-foam">
-                              Android APK Package
-                            </span>
-                            <span className="rounded bg-emerald-500/20 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-emerald-300">
-                              Offline Ready
-                            </span>
-                          </div>
-                          <p className="mt-1 text-xs leading-relaxed text-foam/60">
-                            Direct standalone Android app with native 60 FPS performance and 100% offline play.
-                          </p>
+                  <div className="rounded-xl border border-emerald-500/25 bg-emerald-950/30 p-3.5 transition-all hover:border-emerald-500/40 hover:bg-emerald-950/45">
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                      <div className="min-w-0 pr-1">
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-bold uppercase tracking-[0.16em] text-foam">
+                            Android Native App
+                          </span>
+                          <span className="rounded bg-emerald-500/20 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-emerald-300">
+                            100% Offline
+                          </span>
                         </div>
-                        <a
-                          href={APK_DOWNLOAD_URL}
-                          download="SeaDrift.apk"
-                          className="inline-flex shrink-0 items-center justify-center gap-1.5 rounded-lg border border-emerald-500/40 bg-emerald-950/70 px-3.5 py-2 text-xs font-bold uppercase tracking-wider text-emerald-300 transition-all hover:border-emerald-400 hover:bg-emerald-900/80"
-                        >
-                          {I.download("h-3.5 w-3.5 text-emerald-400")}
-                          Download APK
-                        </a>
+                        <p className="mt-1 text-xs leading-relaxed text-foam/60">
+                          Install the direct standalone APK for native 60 FPS performance without internet.
+                        </p>
                       </div>
+                      <a
+                        href={APK_DOWNLOAD_URL}
+                        download="SeaDrift.apk"
+                        className="inline-flex shrink-0 items-center justify-center gap-1.5 rounded-lg border border-emerald-500/40 bg-emerald-950/70 px-4 py-2 text-xs font-bold uppercase tracking-wider text-emerald-300 transition-all hover:scale-[1.02] hover:border-emerald-400 hover:bg-emerald-900/80 active:scale-[0.98]"
+                      >
+                        {I.download("h-3.5 w-3.5 text-emerald-400")}
+                        Download APK
+                      </a>
                     </div>
                   </div>
                 )}
 
-                {/* Clear local scores */}
+                {/* 6. Clear local scores */}
                 {scores.length > 0 && (
-                  <div className="border-t border-foam/10 pt-4">
+                  <div className="pt-2">
                     <button
                       type="button"
                       onClick={() => {
@@ -1288,24 +1268,25 @@ export default function App() {
                         setScores(clearScores());
                         setConfirmClear(false);
                       }}
-                      className={`w-full rounded-lg border py-2 text-xs font-semibold transition-colors ${
+                      className={`w-full rounded-xl border py-2.5 text-xs font-semibold tracking-wide transition-all ${
                         confirmClear
-                          ? "border-[#ff7a5c]/70 bg-[#ff7a5c]/15 text-[#ffb09a]"
-                          : "border-foam/15 text-foam/55 hover:border-foam/30 hover:text-foam/80"
+                          ? "border-[#ff7a5c]/80 bg-[#ff7a5c]/20 text-[#ffb5a0] shadow-[0_0_16px_rgba(255,90,50,0.3)]"
+                          : "border-foam/12 text-foam/50 hover:border-foam/25 hover:bg-foam/[0.04] hover:text-foam/80"
                       }`}
                     >
-                      {confirmClear ? "Tap again to clear all saved scores" : "Clear High Scores"}
+                      {confirmClear ? "Tap again to confirm clearing high scores" : "Clear High Scores"}
                     </button>
                   </div>
                 )}
               </div>
 
+              {/* Done button */}
               <button
                 onClick={() => {
                   setModal("none");
                   setConfirmClear(false);
                 }}
-                className="btn-primary mt-6 w-full py-3 text-xs font-bold uppercase tracking-[0.2em]"
+                className="btn-primary mt-6 w-full py-3.5 text-xs font-bold uppercase tracking-[0.22em]"
               >
                 Done
               </button>

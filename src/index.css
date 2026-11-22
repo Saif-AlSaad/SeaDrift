@@ -376,3 +376,102 @@ input {
 input[type="range"] {
   touch-action: pan-x;
 }
+
+/* ---------- modern glassmorphism modal & clean settings UI ---------- */
+
+@keyframes modalBackdropFade {
+  0% {
+    opacity: 0;
+    backdrop-filter: blur(0px);
+  }
+  100% {
+    opacity: 1;
+    backdrop-filter: blur(10px);
+  }
+}
+
+@keyframes modalCardSlide {
+  0% {
+    opacity: 0;
+    transform: translateY(18px) scale(0.96);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.anim-modal-backdrop {
+  animation: modalBackdropFade 0.28s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.anim-modal-card {
+  animation: modalCardSlide 0.35s cubic-bezier(0.16, 1, 0.3, 1) both;
+  will-change: transform, opacity;
+}
+
+.glass-modal {
+  background: rgba(4, 18, 24, 0.88);
+  border: 1px solid rgba(233, 245, 239, 0.12);
+  border-radius: 20px;
+  box-shadow:
+    0 24px 70px rgba(0, 0, 0, 0.65),
+    0 4px 20px rgba(0, 0, 0, 0.35),
+    inset 0 1px 0 rgba(233, 245, 239, 0.12);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+}
+
+.settings-card {
+  background: rgba(6, 24, 32, 0.55);
+  border: 1px solid rgba(233, 245, 239, 0.08);
+  border-radius: 14px;
+  padding: 1rem;
+  transition: all 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.settings-card:hover {
+  background: rgba(8, 32, 42, 0.68);
+  border-color: rgba(233, 245, 239, 0.14);
+}
+
+/* Custom styled smooth range slider */
+input[type="range"].custom-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 6px;
+  border-radius: 999px;
+  background: rgba(233, 245, 239, 0.12);
+  outline: none;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+input[type="range"].custom-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #ffb454;
+  border: 2px solid #241005;
+  box-shadow: 0 0 10px rgba(255, 180, 84, 0.6);
+  cursor: pointer;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+input[type="range"].custom-slider::-webkit-slider-thumb:hover {
+  transform: scale(1.2);
+  box-shadow: 0 0 16px rgba(255, 180, 84, 0.9);
+}
+input[type="range"].custom-slider::-moz-range-thumb {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #ffb454;
+  border: 2px solid #241005;
+  box-shadow: 0 0 10px rgba(255, 180, 84, 0.6);
+  cursor: pointer;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+input[type="range"].custom-slider::-moz-range-thumb:hover {
+  transform: scale(1.2);
+  box-shadow: 0 0 16px rgba(255, 180, 84, 0.9);
+}
