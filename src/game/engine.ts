@@ -105,83 +105,87 @@ interface DiffTune {
   waveUnlock: number;
   whirlUnlock: number;
   stormStart: number;
+  scoreMultiplier: number;
 }
 
 const DIFF_TUNING: Record<Difficulty, DiffTune> = {
   calm: {
-    baseSpeed: 17.5,
-    maxExtraSpeed: 13,
-    baseDrain: 3.4,
-    extraDrain: 2.8,
-    stormDrain: 0.7,
-    amberFuel: 4.5,
-    tealFuel: 7.2,
-    wispGapBase: 36,
-    wispGapExtra: 12,
+    baseSpeed: 16.5,
+    maxExtraSpeed: 11.0,
+    baseDrain: 2.8,
+    extraDrain: 2.0,
+    stormDrain: 0.5,
+    amberFuel: 5.5,
+    tealFuel: 9.0,
+    wispGapBase: 32,
+    wispGapExtra: 10,
     wispClusterMin: 2,
     wispClusterMax: 4,
-    magnetPull: 2.0,
-    magnetRange: 3.0,
-    catchReach: 2.35,
-    rockPaceStart: 2.4,
-    rockPaceEnd: 1.15,
-    mineUnlock: 16,
-    minePaceStart: 7.5,
-    minePaceEnd: 4.4,
-    logUnlock: 22,
-    waveUnlock: 30,
-    whirlUnlock: 36,
-    stormStart: 46,
+    magnetPull: 2.4,
+    magnetRange: 3.4,
+    catchReach: 2.4,
+    rockPaceStart: 2.8,
+    rockPaceEnd: 1.5,
+    mineUnlock: 24,
+    minePaceStart: 9.0,
+    minePaceEnd: 5.5,
+    logUnlock: 30,
+    waveUnlock: 38,
+    whirlUnlock: 48,
+    stormStart: 56,
+    scoreMultiplier: 1.0,
   },
   standard: {
-    baseSpeed: 19.5,
-    maxExtraSpeed: 18,
-    baseDrain: 4.9,
-    extraDrain: 4.4,
-    stormDrain: 1.2,
-    amberFuel: 3.1,
-    tealFuel: 5.4,
-    wispGapBase: 48,
-    wispGapExtra: 18,
+    baseSpeed: 18.2,
+    maxExtraSpeed: 14.0,
+    baseDrain: 3.8,
+    extraDrain: 2.8,
+    stormDrain: 0.8,
+    amberFuel: 4.2,
+    tealFuel: 6.8,
+    wispGapBase: 40,
+    wispGapExtra: 14,
     wispClusterMin: 1,
     wispClusterMax: 3,
-    magnetPull: 1.3,
-    magnetRange: 2.2,
-    catchReach: 2.0,
-    rockPaceStart: 1.75,
-    rockPaceEnd: 0.78,
-    mineUnlock: 9,
-    minePaceStart: 5.5,
-    minePaceEnd: 2.9,
-    logUnlock: 15,
-    waveUnlock: 21,
-    whirlUnlock: 28,
-    stormStart: 36,
+    magnetPull: 1.6,
+    magnetRange: 2.6,
+    catchReach: 2.15,
+    rockPaceStart: 2.2,
+    rockPaceEnd: 1.1,
+    mineUnlock: 14,
+    minePaceStart: 6.8,
+    minePaceEnd: 3.8,
+    logUnlock: 20,
+    waveUnlock: 26,
+    whirlUnlock: 34,
+    stormStart: 42,
+    scoreMultiplier: 1.4,
   },
   tempest: {
-    baseSpeed: 21.5,
-    maxExtraSpeed: 20,
-    baseDrain: 6.0,
-    extraDrain: 5.2,
-    stormDrain: 1.5,
-    amberFuel: 2.4,
-    tealFuel: 4.4,
-    wispGapBase: 55,
-    wispGapExtra: 20,
+    baseSpeed: 20.2,
+    maxExtraSpeed: 17.0,
+    baseDrain: 4.8,
+    extraDrain: 3.6,
+    stormDrain: 1.1,
+    amberFuel: 3.4,
+    tealFuel: 5.5,
+    wispGapBase: 46,
+    wispGapExtra: 16,
     wispClusterMin: 1,
-    wispClusterMax: 2,
-    magnetPull: 0.85,
-    magnetRange: 1.7,
-    catchReach: 1.85,
-    rockPaceStart: 1.45,
-    rockPaceEnd: 0.65,
-    mineUnlock: 6,
-    minePaceStart: 4.4,
-    minePaceEnd: 2.3,
-    logUnlock: 11,
-    waveUnlock: 16,
-    whirlUnlock: 22,
-    stormStart: 28,
+    wispClusterMax: 3,
+    magnetPull: 1.2,
+    magnetRange: 2.1,
+    catchReach: 1.95,
+    rockPaceStart: 1.75,
+    rockPaceEnd: 0.85,
+    mineUnlock: 9,
+    minePaceStart: 5.0,
+    minePaceEnd: 2.8,
+    logUnlock: 14,
+    waveUnlock: 18,
+    whirlUnlock: 24,
+    stormStart: 30,
+    scoreMultiplier: 1.9,
   },
 };
 
@@ -3041,7 +3045,7 @@ export class GameEngine {
     if (!scoring) return;
     const tune = DIFF_TUNING[this.difficulty];
     this.wispsCaught++;
-    const gained = (w.teal ? 30 : 12) * this.combo;
+    const gained = Math.round((w.teal ? 30 : 12) * this.combo * tune.scoreMultiplier);
     this.score += gained;
     this.combo = Math.min(this.combo + 1, 12);
     this.maxCombo = Math.max(this.maxCombo, this.combo);
@@ -3071,7 +3075,8 @@ export class GameEngine {
 
   private closeCall() {
     if (this.state !== "playing" || this.invulnT > 0) return;
-    const bonus = 45 * this.combo;
+    const tune = DIFF_TUNING[this.difficulty];
+    const bonus = Math.round(45 * this.combo * tune.scoreMultiplier);
     this.score += bonus;
     this.energy = Math.min(100, this.energy + 1.5);
     this.audio.closeCall();
@@ -3159,7 +3164,9 @@ export class GameEngine {
   private catchJelly(j: Jelly) {
     j.active = false;
     j.group.visible = false;
-    this.score += 300;
+    const tune = DIFF_TUNING[this.difficulty];
+    const gained = Math.round(300 * tune.scoreMultiplier);
+    this.score += gained;
     this.energy = Math.min(100, this.energy + 20);
     this.slowmoT = 1.1;
     this.timeScale = 0.45;
@@ -3173,7 +3180,7 @@ export class GameEngine {
     this.spawnRing(j.x, j.z, 6, 1.6, 1.6);
     this.spawnRing(j.x, j.z, 4, 1.2, 1);
     this.tmpV2.set(j.x, y + 1.4, j.z);
-    this.popup(this.tmpV2, "+300 LUMEN", "gold");
+    this.popup(this.tmpV2, `+${gained} LUMEN`, "gold");
   }
 
   private endRun() {
@@ -3495,7 +3502,7 @@ export class GameEngine {
 
       const drain = tune.baseDrain + tune.extraDrain * d + this.storm * tune.stormDrain;
       if (!this.godMode) this.energy = Math.max(0, this.energy - drain * dt);
-      this.score += this.speed * dt * 0.5;
+      this.score += this.speed * dt * 0.5 * tune.scoreMultiplier;
       this.comboT = Math.max(0, this.comboT - dt);
       if (this.comboT <= 0 && this.combo > 1) this.combo = 1;
       this.invulnT = Math.max(0, this.invulnT - dt);

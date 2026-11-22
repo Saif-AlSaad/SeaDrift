@@ -140,10 +140,22 @@ const STEER_INFO: Record<TouchControl, string> = {
   tilt: "Tilt your phone left and right. Re-centres at the start of each voyage.",
 };
 
-const DIFF_INFO: Record<Difficulty, { label: string; desc: string }> = {
-  calm: { label: "Calm", desc: "Gentler lamp drain and wider gaps between hazards." },
-  standard: { label: "Standard", desc: "Scarce wisps, active steering, full sea hazards." },
-  tempest: { label: "Tempest", desc: "Fierce drain, narrow margins, relentless squalls." },
+const DIFF_INFO: Record<Difficulty, { label: string; desc: string; mult: string }> = {
+  calm: {
+    label: "Calm",
+    desc: "1.0× Difficulty · Relaxed cruise with forgiving lamp drain, steady wisps, and open seas.",
+    mult: "1.0×",
+  },
+  standard: {
+    label: "Standard",
+    desc: "1.4× Difficulty · Balanced voyage with active steering, fair hazard pacing, and 1.4× score.",
+    mult: "1.4×",
+  },
+  tempest: {
+    label: "Tempest",
+    desc: "1.9× Difficulty · High-speed storm sailing, swift squalls, intense thrills, and 1.9× score.",
+    mult: "1.9×",
+  },
 };
 
 /* ------------------------------ small pieces ------------------------------ */
@@ -824,7 +836,7 @@ export default function App() {
                     className="inline-flex items-center gap-1.5 rounded-full border border-foam/18 bg-[#05141a]/65 px-3.5 py-1 text-xs font-medium text-foam/80 transition-colors hover:border-foam/35 hover:text-foam"
                   >
                     <span className="h-1.5 w-1.5 rounded-full bg-lumen" />
-                    {DIFF_INFO[settings.difficulty].label} mode
+                    {DIFF_INFO[settings.difficulty].label} ({DIFF_INFO[settings.difficulty].mult})
                   </button>
                   {best > 0 && (
                     <button
@@ -950,7 +962,7 @@ export default function App() {
 
               <div className="mt-6">
                 <div className="text-[10px] font-semibold tracking-[0.34em] text-foam/55">
-                  VOYAGE SCORE · {DIFF_INFO[final.difficulty].label.toUpperCase()}
+                  VOYAGE SCORE · {DIFF_INFO[final.difficulty].label.toUpperCase()} ({DIFF_INFO[final.difficulty].mult})
                 </div>
                 <div className="mt-1 font-display text-5xl font-black text-amber [text-shadow:0_0_30px_rgba(255,180,84,0.45)]">
                   {final.score.toLocaleString("en-US")}
@@ -1092,9 +1104,9 @@ export default function App() {
                     value={settings.difficulty}
                     onChange={(difficulty) => updateSettings({ difficulty })}
                     options={[
-                      { value: "calm", label: "Calm" },
-                      { value: "standard", label: "Standard" },
-                      { value: "tempest", label: "Tempest" },
+                      { value: "calm", label: "Calm (1.0×)" },
+                      { value: "standard", label: "Standard (1.4×)" },
+                      { value: "tempest", label: "Tempest (1.9×)" },
                     ]}
                   />
                   <p className="mt-1.5 text-xs text-foam/50">
