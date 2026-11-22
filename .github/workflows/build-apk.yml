@@ -1,0 +1,75 @@
+name: Build Android APK
+
+on:
+  push:
+    branches: ["main"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-apk:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Java 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: "temurin"
+          java-version: "21"
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build web application
+        run: npm run build
+
+      - name: Sync Capacitor Android
+        run: npx cap sync android
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Grant execute permission for gradlew
+        run: chmod +x android/gradlew
+
+      - name: Build Debug APK
+        run: |
+          cd android
+          ./gradlew assembleDebug --stacktrace
+
+      - name: Prepare APK for distribution
+        run: |
+          cp android/app/build/outputs/apk/debug/app-debug.apk SeaDrift.apk
+
+      - name: Upload APK Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: SeaDrift-Android-APK
+          path: SeaDrift.apk
+          retention-days: 30
+
+      - name: Publish or Update GitHub Release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release delete v1.0.0 --yes || true
+          git tag -d v1.0.0 || true
+          git push origin :refs/tags/v1.0.0 || true
+          gh release create v1.0.0 SeaDrift.apk \
+            --title "SeaDrift v1.0.0 (Android APK)" \
+            --notes "### 🌊 SeaDrift - Offline Android Game Release
+            
+          - **100% Offline Playable:** All fonts, 3D graphics, procedural audio, and assets are self-contained.
+          - **Visuals:** Gerstner waves, subsurface scattering, dynamic dusk atmosphere, and bioluminescent wake effects.
+          - **Download:** Download \`SeaDrift.apk\` below and install directly on your Android phone."
