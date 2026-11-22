@@ -629,36 +629,36 @@ export function makeIslandGeometry(seed: number): THREE.BufferGeometry {
     const strata = 0.86 + 0.14 * Math.sin(y * 46 + n2 * 6);
 
     // wet dark rock at the waterline
-    let R = lerp(0.075, 0.31, smooth(y, 0.02, 0.62));
-    let G = lerp(0.105, 0.285, smooth(y, 0.02, 0.62));
-    let B = lerp(0.115, 0.275, smooth(y, 0.02, 0.62));
-    // sparse dark scrub on gentler mid slopes
-    const scrub = (1 - smooth(slope, 0.5, 1.5)) * smooth(y, 0.06, 0.2) * (1 - smooth(y, 0.5, 0.8));
-    const scrubN = smooth(n2, 0.42, 0.7);
-    R = lerp(R, 0.095, scrub * scrubN);
-    G = lerp(G, 0.215, scrub * scrubN);
-    B = lerp(B, 0.135, scrub * scrubN);
-    // pale exposed rock on the highest crags
-    const crag = smooth(y, 0.62, 0.92) * smooth(slope, 0.35, 1.3);
-    R = lerp(R, 0.42, crag * 0.7);
-    G = lerp(G, 0.39, crag * 0.7);
-    B = lerp(B, 0.37, crag * 0.7);
-    // stratification + warm dusk rim light (kept dark: the sky is brighter than the land)
-    const lit = 0.68 + sunlight * 0.62;
-    R *= (strata + sunlight * 0.42 + 0.05) * lit;
-    G *= (strata + sunlight * 0.20 + 0.05) * lit;
-    B *= (strata + sunlight * 0.10 + 0.05) * lit;
-    // a trace of pale stone only on the very highest crags
-    const cap = smooth(y, 0.78, 1.02) * 0.16;
-    R += cap * 0.34;
-    G += cap * 0.31;
-    B += cap * 0.29;
+    let R = lerp(0.12, 0.42, smooth(y, 0.02, 0.62));
+    let G = lerp(0.16, 0.38, smooth(y, 0.02, 0.62));
+    let B = lerp(0.18, 0.36, smooth(y, 0.02, 0.62));
+    // sparse rich pine/moss scrub on gentler mid slopes
+    const scrub = (1 - smooth(slope, 0.5, 1.5)) * smooth(y, 0.06, 0.22) * (1 - smooth(y, 0.55, 0.85));
+    const scrubN = smooth(n2, 0.40, 0.72);
+    R = lerp(R, 0.14, scrub * scrubN);
+    G = lerp(G, 0.34, scrub * scrubN);
+    B = lerp(B, 0.20, scrub * scrubN);
+    // pale exposed granite rock on the highest crags
+    const crag = smooth(y, 0.58, 0.92) * smooth(slope, 0.35, 1.3);
+    R = lerp(R, 0.58, crag * 0.75);
+    G = lerp(G, 0.52, crag * 0.75);
+    B = lerp(B, 0.48, crag * 0.75);
+    // stratification + warm dusk illumination
+    const lit = 0.75 + sunlight * 0.65;
+    R *= (strata + sunlight * 0.45 + 0.08) * lit;
+    G *= (strata + sunlight * 0.22 + 0.08) * lit;
+    B *= (strata + sunlight * 0.12 + 0.08) * lit;
+    // stone highlights on peaks
+    const cap = smooth(y, 0.76, 1.02) * 0.25;
+    R += cap * 0.42;
+    G += cap * 0.38;
+    B += cap * 0.34;
     // wet shoreline
-    const wet = 1 - smooth(y, -0.03, 0.09);
-    R *= 1 - wet * 0.55;
-    G *= 1 - wet * 0.4;
-    B *= 1 - wet * 0.28;
-    const grain = (0.9 + n2 * 0.24) * 0.62;
+    const wet = 1 - smooth(y, -0.03, 0.10);
+    R *= 1 - wet * 0.50;
+    G *= 1 - wet * 0.35;
+    B *= 1 - wet * 0.22;
+    const grain = 0.92 + n2 * 0.18;
     return [R * grain, G * grain, B * grain] as RGB;
   };
 
@@ -758,17 +758,25 @@ export const ISLAND_FRAG = /* glsl */ `
   varying vec3 vNormal;
   void main() {
     vec3 V = normalize(cameraPosition - vWorld);
-    float rim = pow(1.0 - max(dot(normalize(vNormal), V), 0.0), 3.0);
-    vec3 col = vCol * (0.86 + rim * 0.16);
-    col += uSunColor * rim * 0.055 * (1.0 - uStorm);
-    col = mix(col, col * 0.32, uStorm * 0.7);
-    col += uFlash * vec3(0.10, 0.12, 0.17);
+    vec3 N = normalize(vNormal);
+    float rim = pow(1.0 - max(dot(N, V), 0.0), 3.0);
+    
+    // Directional sunlight + ambient sky fill on the hills
+    vec3 sunDir = normalize(vec3(-0.38, 0.14, -0.92));
+    float ndotl = max(dot(N, sunDir), 0.0);
+    vec3 ambient = mix(vec3(0.36, 0.42, 0.50), vec3(0.52, 0.40, 0.46), 1.0 - uStorm * 0.7);
+    vec3 directSun = uSunColor * (ndotl * 1.25 + rim * 0.35) * (1.0 - uStorm * 0.85);
+    
+    vec3 col = vCol * (ambient + directSun);
+    col = mix(col, col * 0.38, uStorm * 0.7);
+    col += uFlash * vec3(0.12, 0.15, 0.20);
+
+    // Atmospheric aerial perspective (soft distant mountains into dusk haze)
     float dist = length(cameraPosition - vWorld);
-    float haze = 1.0 - exp(-dist * (0.0010 + uStorm * 0.0009));
-    vec3 hazeCol = mix(uHaze * 0.52, uHorizon * 0.62, 0.3) * (1.0 - uStorm * 0.65) + uFlash * 0.1;
-    col = mix(col, hazeCol, clamp(haze, 0.0, 0.86));
-    // the composer applies another tonemap/colorspace pass; keep land dusk-dark in both paths
-    col *= 0.36;
+    float haze = 1.0 - exp(-dist * (0.00075 + uStorm * 0.0008));
+    vec3 hazeCol = mix(uHaze * 0.65, uHorizon * 0.75, 0.35) * (1.0 - uStorm * 0.65) + uFlash * 0.1;
+    col = mix(col, hazeCol, clamp(haze, 0.0, 0.84));
+
     gl_FragColor = vec4(col, 1.0);
     #include <tonemapping_fragment>
     #include <colorspace_fragment>

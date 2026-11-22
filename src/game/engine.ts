@@ -1429,18 +1429,22 @@ export class GameEngine {
     });
     const rockMat = new THREE.MeshStandardMaterial({
       vertexColors: true,
-      roughness: 0.92,
+      roughness: 0.88,
       fog: false,
-      emissive: 0x10201c,
-      emissiveIntensity: 0.65,
+      emissive: 0x182422,
+      emissiveIntensity: 0.5,
     });
-    const treeMat = new THREE.MeshBasicMaterial({ color: 0x1b3328, fog: false });
-    const treeGeo = new THREE.ConeGeometry(0.5, 1.35, 5);
+    const treeMat = new THREE.MeshStandardMaterial({
+      color: 0x1a4530,
+      roughness: 0.82,
+      fog: false,
+    });
+    const treeGeo = new THREE.ConeGeometry(0.5, 1.35, 6);
     const foamMat = new THREE.MeshBasicMaterial({
       map: makeFoamRingTexture(),
-      color: new THREE.Color(0.8, 0.85, 0.84),
+      color: new THREE.Color(0.88, 0.94, 0.96),
       transparent: true,
-      opacity: 0.6,
+      opacity: 0.75,
       depthWrite: false,
       fog: false,
     });
@@ -1948,7 +1952,8 @@ export class GameEngine {
     // --- rocks ---
     const rockMat = new THREE.MeshStandardMaterial({
       vertexColors: true,
-      roughness: 0.84,
+      roughness: 0.80,
+      metalness: 0.08,
     });
     const foamTex = makeFoamRingTexture();
     const foamGeo = new THREE.PlaneGeometry(1, 1);
@@ -1960,9 +1965,9 @@ export class GameEngine {
         foamGeo,
         new THREE.MeshBasicMaterial({
           map: foamTex,
-          color: new THREE.Color(0.5, 0.5, 0.48),
+          color: new THREE.Color(0.85, 0.94, 0.96),
           transparent: true,
-          opacity: 0.8,
+          opacity: 0.82,
           depthWrite: false,
         }),
       );
@@ -1974,14 +1979,14 @@ export class GameEngine {
 
     // --- tethered sea mines ---
     const ironMat = new THREE.MeshStandardMaterial({
-      color: 0x26292b,
-      roughness: 0.62,
-      metalness: 0.58,
+      color: 0x36393e,
+      roughness: 0.42,
+      metalness: 0.75,
     });
     const rustMat = new THREE.MeshStandardMaterial({
-      color: 0x4b2a1c,
-      roughness: 0.85,
-      metalness: 0.3,
+      color: 0x543220,
+      roughness: 0.82,
+      metalness: 0.35,
     });
     const sphereGeo = new THREE.IcosahedronGeometry(0.68, 2);
     const hornGeo = new THREE.ConeGeometry(0.11, 0.34, 6);
@@ -2014,10 +2019,10 @@ export class GameEngine {
       body.add(chain);
 
       const beaconMat = new THREE.MeshStandardMaterial({
-        color: 0x2a0504,
-        emissive: new THREE.Color(1.0, 0.16, 0.12),
-        emissiveIntensity: 3.0,
-        roughness: 0.25,
+        color: 0xff1a10,
+        emissive: new THREE.Color(1.0, 0.15, 0.08),
+        emissiveIntensity: 4.8,
+        roughness: 0.2,
         fog: false,
       });
       const beacon = new THREE.Mesh(beaconGeo, beaconMat);
@@ -2025,11 +2030,11 @@ export class GameEngine {
       const halo = new THREE.Sprite(
         new THREE.SpriteMaterial({
           map: glowTex,
-          color: new THREE.Color(1.0, 0.18, 0.12),
+          color: new THREE.Color(1.0, 0.18, 0.10),
           blending: THREE.AdditiveBlending,
           depthWrite: false,
           transparent: true,
-          opacity: 0.85,
+          opacity: 0.90,
           fog: false,
         }),
       );
@@ -2100,8 +2105,9 @@ export class GameEngine {
     const logMat = new THREE.MeshStandardMaterial({
       map: bark,
       bumpMap: bark,
-      bumpScale: 1.2,
-      roughness: 0.9,
+      bumpScale: 1.4,
+      roughness: 0.85,
+      metalness: 0.05,
     });
     const logGeo = makeLogGeometry(6.6);
     const stubGeo = new THREE.CylinderGeometry(0.09, 0.14, 0.8, 6);
@@ -4078,10 +4084,10 @@ function makeRockGeometry(seed: number): THREE.BufferGeometry {
     const wet = 1 - smooth(py, -0.06, 0.36);
     const top = smooth(py, 0.45, 0.95);
     const strata = 0.84 + 0.16 * Math.sin(py * 42 + n * 7);
-    const b = (0.105 + n2 * 0.13 + top * 0.075) * strata;
-    col[i * 3] = b * (1 - wet * 0.52);
-    col[i * 3 + 1] = b * (1 - wet * 0.28) + wet * 0.012 + top * 0.008;
-    col[i * 3 + 2] = b * 1.06 * (1 - wet * 0.36) + wet * 0.018;
+    const b = (0.34 + n2 * 0.20 + top * 0.18) * strata;
+    col[i * 3] = b * (1 - wet * 0.45) + top * 0.06;
+    col[i * 3 + 1] = b * (1 - wet * 0.30) + wet * 0.025 + top * 0.04;
+    col[i * 3 + 2] = b * 1.04 * (1 - wet * 0.22) + wet * 0.035;
   }
   geo.setAttribute("color", new THREE.BufferAttribute(col, 3));
   geo.computeVertexNormals();
@@ -4131,15 +4137,17 @@ function makeBarkTexture(): THREE.Texture {
   c.width = 256;
   c.height = 128;
   const g = c.getContext("2d")!;
-  g.fillStyle = "#4a3524";
+  g.fillStyle = "#523c28";
   g.fillRect(0, 0, 256, 128);
-  for (let i = 0; i < 260; i++) {
+  for (let i = 0; i < 280; i++) {
     const x = Math.random() * 256;
-    g.strokeStyle =
-      Math.random() < 0.55
-        ? `rgba(20,12,6,${0.15 + Math.random() * 0.35})`
-        : `rgba(150,120,88,${0.08 + Math.random() * 0.18})`;
-    g.lineWidth = 0.6 + Math.random() * 2.2;
+    const isMoss = Math.random() < 0.12;
+    g.strokeStyle = isMoss
+      ? `rgba(45,85,40,${0.2 + Math.random() * 0.3})`
+      : Math.random() < 0.55
+      ? `rgba(22,14,8,${0.2 + Math.random() * 0.35})`
+      : `rgba(165,135,100,${0.1 + Math.random() * 0.22})`;
+    g.lineWidth = 0.6 + Math.random() * 2.4;
     g.beginPath();
     g.moveTo(x, 0);
     g.bezierCurveTo(x + (Math.random() - 0.5) * 10, 42, x + (Math.random() - 0.5) * 10, 86, x, 128);
