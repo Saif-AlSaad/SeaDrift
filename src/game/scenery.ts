@@ -269,39 +269,76 @@ export function makeDetailedClothTexture(): THREE.CanvasTexture {
   return canvasTex(c);
 }
 
-/** Fine overlapping cycloid scales, tileable, near-neutral so vertex colours show. */
+/** Fine overlapping cycloid scales with iridescent pearlescence and lateral line shimmer. */
 export function makeFishScaleTexture(): THREE.CanvasTexture {
   const c = document.createElement("canvas");
-  c.width = c.height = 256;
+  c.width = c.height = 512;
   const g = c.getContext("2d")!;
-  g.fillStyle = "#f2f5f3";
-  g.fillRect(0, 0, 256, 256);
+
+  // Silvery iridescent pearlescent wash
+  const bg = g.createLinearGradient(0, 0, 512, 512);
+  bg.addColorStop(0, "#f2f8f8");
+  bg.addColorStop(0.5, "#e4f0f2");
+  bg.addColorStop(1, "#f4faf9");
+  g.fillStyle = bg;
+  g.fillRect(0, 0, 512, 512);
+
   const step = 16;
-  for (let row = -1; row <= 256 / step + 1; row++) {
-    for (let col = -1; col <= 256 / step + 1; col++) {
+  for (let row = -1; row <= 512 / step + 1; row++) {
+    for (let col = -1; col <= 512 / step + 1; col++) {
       const x = col * step + (row % 2 ? step * 0.5 : 0);
       const y = row * step;
-      const shade = 0.86 + hash3(col, row, 3) * 0.14;
-      g.fillStyle = `rgba(${Math.round(255 * shade)},${Math.round(255 * shade)},${Math.round(255 * shade)},0.55)`;
+      const shade = 0.88 + hash3(col, row, 3) * 0.12;
+
+      // Overlapping scale body
+      g.fillStyle = `rgba(${Math.round(242 * shade)},${Math.round(250 * shade)},${Math.round(248 * shade)},0.60)`;
       g.beginPath();
-      g.ellipse(x, y, step * 0.58, step * 0.66, 0, 0, Math.PI * 2);
+      g.ellipse(x, y, step * 0.62, step * 0.72, 0, 0, Math.PI * 2);
       g.fill();
-      g.strokeStyle = "rgba(36,72,84,0.19)";
-      g.lineWidth = 1;
+
+      // Circuli (fine concentric scale rings)
+      g.strokeStyle = "rgba(38, 80, 92, 0.17)";
+      g.lineWidth = 0.9;
       g.beginPath();
-      g.arc(x, y + 1, step * 0.52, 0.12, Math.PI - 0.12);
+      g.arc(x, y + 1, step * 0.54, 0.1, Math.PI - 0.1);
       g.stroke();
-      g.strokeStyle = "rgba(255,255,255,0.42)";
-      g.lineWidth = 0.8;
+
+      // Pearlescent turquoise / gold iridescent rim
+      const irid = (col + row) % 3 === 0
+        ? "rgba(160, 245, 235, 0.40)"
+        : "rgba(255, 232, 175, 0.32)";
+      g.strokeStyle = irid;
+      g.lineWidth = 1.1;
       g.beginPath();
-      g.arc(x - 1, y - 1, step * 0.42, 0.3, Math.PI - 0.3);
+      g.arc(x - 1, y - 1, step * 0.44, 0.25, Math.PI - 0.25);
       g.stroke();
+
+      // Specular pearl highlight point
+      g.fillStyle = "rgba(255, 255, 255, 0.65)";
+      g.fillRect(x - 1, y - step * 0.35, 1.2, 1.2);
     }
   }
-  for (let i = 0; i < 1800; i++) {
-    g.fillStyle = `rgba(30,60,72,${Math.random() * 0.05})`;
-    g.fillRect(Math.random() * 256, Math.random() * 256, 1, 1);
+
+  // Shimmering lateral sensory line through the middle
+  const latGrad = g.createLinearGradient(0, 230, 0, 282);
+  latGrad.addColorStop(0, "rgba(60, 180, 180, 0)");
+  latGrad.addColorStop(0.35, "rgba(80, 225, 215, 0.22)");
+  latGrad.addColorStop(0.5, "rgba(255, 255, 255, 0.40)");
+  latGrad.addColorStop(0.65, "rgba(80, 225, 215, 0.22)");
+  latGrad.addColorStop(1, "rgba(60, 180, 180, 0)");
+  g.fillStyle = latGrad;
+  g.fillRect(0, 230, 512, 52);
+
+  // Micro guanine crystal speckles
+  for (let i = 0; i < 2400; i++) {
+    const rx = Math.random() * 512;
+    const ry = Math.random() * 512;
+    g.fillStyle = Math.random() < 0.65
+      ? `rgba(255,255,255,${0.08 + Math.random() * 0.18})`
+      : `rgba(90,205,215,${0.05 + Math.random() * 0.12})`;
+    g.fillRect(rx, ry, 1, 1);
   }
+
   return canvasTex(c, true);
 }
 
@@ -412,27 +449,48 @@ export function makeDetailedFishGeometry(): THREE.BufferGeometry {
       bu.push((j / segs) * 3.2, ((0.55 - z) / 1.0) * 4.2);
 
       const top = ca;
-      const back = smooth(top, -0.12, 0.72);
-      let r = lerp(0.78, 0.075, back);
-      let gg = lerp(0.83, 0.34, back);
-      let bb = lerp(0.79, 0.47, back);
-      // warm silver flank, iridescent lateral line
-      const flank = Math.exp(-Math.pow(top + 0.28, 2) * 26);
-      r += flank * 0.12;
-      gg += flank * 0.16;
-      bb += flank * 0.1;
-      if (Math.abs(top) < 0.13 && z > -0.34 && z < 0.22) {
-        r *= 0.72; gg *= 0.78; bb *= 0.8;
+      // Pelagic countershading: dark cobalt sapphire dorsal, metallic silver flank, pearl belly
+      const back = smooth(top, -0.06, 0.68);
+      let r = lerp(0.85, 0.05, back);
+      let gg = lerp(0.89, 0.24, back);
+      let bb = lerp(0.92, 0.38, back);
+
+      // Tiger / mackerel vertical oceanic parr bars along upper flank
+      const parr = Math.sin(z * 34.0 + top * 3.0) * smooth(top, 0.08, 0.72);
+      r -= parr * 0.035;
+      gg -= parr * 0.04;
+      bb -= parr * 0.045;
+
+      // Radiant electric turquoise lateral line
+      const latDist = Math.abs(top - 0.02);
+      const lateralLine = Math.exp(-latDist * latDist * 75.0);
+      r = lerp(r, 0.22, lateralLine * 0.75);
+      gg = lerp(gg, 0.88, lateralLine * 0.75);
+      bb = lerp(bb, 0.84, lateralLine * 0.75);
+
+      // Warm silver / pearl flank luster
+      const flank = Math.exp(-Math.pow(top + 0.22, 2) * 22);
+      r += flank * 0.10;
+      gg += flank * 0.14;
+      bb += flank * 0.12;
+
+      // Pearl white ventral keel (belly)
+      const bellyFade = smooth(-top, 0.35, 0.95);
+      r = lerp(r, 0.94, bellyFade * 0.65);
+      gg = lerp(gg, 0.97, bellyFade * 0.65);
+      bb = lerp(bb, 0.99, bellyFade * 0.65);
+
+      // Operculum (gill cover) - metallic golden copper gleam
+      if (z > 0.26 && z < 0.36 && Math.abs(sa) > 0.52) {
+        r = lerp(r, 0.72, 0.5);
+        gg = lerp(gg, 0.58, 0.5);
+        bb = lerp(bb, 0.32, 0.5);
       }
-      // gill cover arc behind the head
-      if (z > 0.27 && z < 0.34 && Math.abs(sa) > 0.55) {
-        r *= 0.64; gg *= 0.66; bb *= 0.68;
+      // Streamlined darker snout
+      if (z > 0.44) {
+        r *= 0.78; gg *= 0.82; bb *= 0.86;
       }
-      // darker snout
-      if (z > 0.45) {
-        r *= 0.82; gg *= 0.84; bb *= 0.86;
-      }
-      const speck = 0.94 + hash3(i, j, 7) * 0.12;
+      const speck = 0.96 + hash3(i, j, 7) * 0.08;
       bc.push(r * speck, gg * speck, bb * speck);
       const wave = clamp((0.28 - z) / 0.72, 0, 1);
       bf.push(wave * wave, 0);
@@ -447,10 +505,10 @@ export function makeDetailedFishGeometry(): THREE.BufferGeometry {
   }
   // nose and tail caps
   const nose = bp.length / 3;
-  bp.push(0, 0, 0.535); bu.push(0, 0); bc.push(0.42, 0.47, 0.46); bf.push(0, 0);
+  bp.push(0, 0, 0.535); bu.push(0, 0); bc.push(0.32, 0.42, 0.46); bf.push(0, 0);
   for (let j = 0; j < segs; j++) bi.push(nose, j + 1, j);
   const tailCap = bp.length / 3;
-  bp.push(0, 0, -0.46); bu.push(0, 0); bc.push(0.12, 0.34, 0.4); bf.push(1, 0);
+  bp.push(0, 0, -0.46); bu.push(0, 0); bc.push(0.08, 0.30, 0.38); bf.push(1, 0);
   const last = (rings - 1) * (segs + 1);
   for (let j = 0; j < segs; j++) bi.push(tailCap, last + j, last + j + 1);
 
@@ -461,10 +519,11 @@ export function makeDetailedFishGeometry(): THREE.BufferGeometry {
   for (let i = 0; i < bf.length; i++) b.flex.push(bf[i]);
   for (let i = 0; i < bi.length; i++) b.idx.push(bi[i]);
 
-  /* --- fins --- */
-  const finDark: RGB = [0.16, 0.40, 0.48];
-  const finLight: RGB = [0.34, 0.66, 0.70];
-  const finCols = [finDark, finLight, finDark, finLight, finDark, finLight, finDark];
+  /* --- fins with radiant translucent rays and bright margins --- */
+  const finDark: RGB = [0.08, 0.28, 0.38];
+  const finLight: RGB = [0.28, 0.72, 0.78];
+  const finGold: RGB = [0.85, 0.72, 0.28];
+  const finCols = [finDark, finLight, finDark, finGold, finLight, finDark, finLight];
 
   // forked caudal fin, upper + lower lobes
   addFin(
@@ -628,37 +687,65 @@ export function makeIslandGeometry(seed: number): THREE.BufferGeometry {
     const n2 = fbm3(x * 9 + seed * 3, y * 7, z * 9 - seed, 4);
     const strata = 0.86 + 0.14 * Math.sin(y * 46 + n2 * 6);
 
-    // wet dark rock at the waterline
-    let R = lerp(0.12, 0.42, smooth(y, 0.02, 0.62));
-    let G = lerp(0.16, 0.38, smooth(y, 0.02, 0.62));
-    let B = lerp(0.18, 0.36, smooth(y, 0.02, 0.62));
-    // sparse rich pine/moss scrub on gentler mid slopes
-    const scrub = (1 - smooth(slope, 0.5, 1.5)) * smooth(y, 0.06, 0.22) * (1 - smooth(y, 0.55, 0.85));
-    const scrubN = smooth(n2, 0.40, 0.72);
-    R = lerp(R, 0.14, scrub * scrubN);
-    G = lerp(G, 0.34, scrub * scrubN);
-    B = lerp(B, 0.20, scrub * scrubN);
-    // pale exposed granite rock on the highest crags
-    const crag = smooth(y, 0.58, 0.92) * smooth(slope, 0.35, 1.3);
-    R = lerp(R, 0.58, crag * 0.75);
-    G = lerp(G, 0.52, crag * 0.75);
-    B = lerp(B, 0.48, crag * 0.75);
-    // stratification + warm dusk illumination
-    const lit = 0.75 + sunlight * 0.65;
-    R *= (strata + sunlight * 0.45 + 0.08) * lit;
-    G *= (strata + sunlight * 0.22 + 0.08) * lit;
-    B *= (strata + sunlight * 0.12 + 0.08) * lit;
-    // stone highlights on peaks
-    const cap = smooth(y, 0.76, 1.02) * 0.25;
-    R += cap * 0.42;
-    G += cap * 0.38;
-    B += cap * 0.34;
-    // wet shoreline
-    const wet = 1 - smooth(y, -0.03, 0.10);
+    // 1. Base Mountain Rock (dark slate at waterline transitioning to mountain rock)
+    let R = lerp(0.14, 0.40, smooth(y, 0.03, 0.65));
+    let G = lerp(0.18, 0.38, smooth(y, 0.03, 0.65));
+    let B = lerp(0.20, 0.36, smooth(y, 0.03, 0.65));
+
+    // 2. Coastal shoreline shelf (warm maritime sand & pebbles)
+    const sandZone = (1 - smooth(slope, 0.35, 1.1)) * (1 - smooth(y, 0.015, 0.075));
+    R = lerp(R, 0.52, sandZone * 0.7);
+    G = lerp(G, 0.45, sandZone * 0.7);
+    B = lerp(B, 0.34, sandZone * 0.7);
+
+    // 3. Lush Green Vibe (coastal rainforest, pine forests, emerald alpine meadows)
+    // Covers low-to-mid mountain slopes up to the subalpine crags
+    const greenZone = smooth(y, 0.035, 0.16) * (1 - smooth(y, 0.62, 0.88));
+    const greenSlope = 1 - smooth(slope, 0.7, 1.85);
+    const greenCover = greenZone * greenSlope;
+
+    // Organic forest patches and mossy gully variance
+    const patch = smooth(n2, 0.30, 0.74);
+    const pineR = lerp(0.08, 0.16, patch);
+    const pineG = lerp(0.30, 0.48, patch);
+    const pineB = lerp(0.12, 0.22, patch);
+
+    R = lerp(R, pineR, greenCover * 0.94);
+    G = lerp(G, pineG, greenCover * 0.94);
+    B = lerp(B, pineB, greenCover * 0.94);
+
+    // 4. Exposed rocky cliff faces on sheer vertical drops
+    const cliff = smooth(slope, 1.25, 2.2) * smooth(y, 0.08, 0.82);
+    R = lerp(R, 0.44 * strata, cliff * 0.75);
+    G = lerp(G, 0.40 * strata, cliff * 0.75);
+    B = lerp(B, 0.38 * strata, cliff * 0.75);
+
+    // 5. Pale granite crags on high ridges
+    const crag = smooth(y, 0.62, 0.92) * smooth(slope, 0.3, 1.4);
+    R = lerp(R, 0.56, crag * 0.65);
+    G = lerp(G, 0.52, crag * 0.65);
+    B = lerp(B, 0.48, crag * 0.65);
+
+    // 6. Alpine snow / frost on highest mountain peaks
+    const snow = smooth(y, 0.82, 0.98) * (1 - smooth(slope, 1.3, 2.2));
+    R = lerp(R, 0.88, snow * 0.85);
+    G = lerp(G, 0.92, snow * 0.85);
+    B = lerp(B, 0.96, snow * 0.85);
+
+    // 7. Sunlight illumination: warm golden sunlit highlights on vegetation & rocks
+    const lit = 0.82 + sunlight * 0.55;
+    const sunWarmth = sunlight * 0.22;
+    R = (R * lit) + sunWarmth * 0.18;
+    G = (G * lit) + sunWarmth * 0.24;
+    B = (B * lit) + sunWarmth * 0.08;
+
+    // 8. Wet shoreline darkening at tide level
+    const wet = 1 - smooth(y, -0.02, 0.07);
     R *= 1 - wet * 0.50;
-    G *= 1 - wet * 0.35;
-    B *= 1 - wet * 0.22;
-    const grain = 0.92 + n2 * 0.18;
+    G *= 1 - wet * 0.40;
+    B *= 1 - wet * 0.28;
+
+    const grain = 0.94 + n2 * 0.14;
     return [R * grain, G * grain, B * grain] as RGB;
   };
 
@@ -712,22 +799,99 @@ export interface TreeSpot {
   lean: number;
 }
 
+/** Realistic tiered alpine conifer tree with trunk and layered foliage boughs */
+export function makePineTreeGeometry(): THREE.BufferGeometry {
+  const pos: number[] = [];
+  const nrm: number[] = [];
+  const col: number[] = [];
+  const idx: number[] = [];
+
+  const addSubGeo = (
+    geo: THREE.BufferGeometry,
+    mat: THREE.Matrix4,
+    colorFn: (x: number, y: number, z: number) => RGB,
+  ) => {
+    const base = pos.length / 3;
+    const p = geo.getAttribute("position");
+    const n = geo.getAttribute("normal");
+    const index = geo.getIndex();
+    const v = new THREE.Vector3();
+    const norm = new THREE.Vector3();
+    const normalMatrix = new THREE.Matrix3().getNormalMatrix(mat);
+
+    for (let i = 0; i < p.count; i++) {
+      v.set(p.getX(i), p.getY(i), p.getZ(i)).applyMatrix4(mat);
+      pos.push(v.x, v.y, v.z);
+      if (n) {
+        norm.set(n.getX(i), n.getY(i), n.getZ(i)).applyMatrix3(normalMatrix).normalize();
+        nrm.push(norm.x, norm.y, norm.z);
+      } else {
+        nrm.push(0, 1, 0);
+      }
+      const c = colorFn(v.x, v.y, v.z);
+      col.push(c[0], c[1], c[2]);
+    }
+
+    if (index) {
+      for (let i = 0; i < index.count; i++) idx.push(base + index.getX(i));
+    } else {
+      for (let i = 0; i < p.count; i++) idx.push(base + i);
+    }
+    geo.dispose();
+  };
+
+  // 1. Cedar trunk
+  const trunk = new THREE.CylinderGeometry(0.06, 0.09, 0.55, 6);
+  const trunkM = new THREE.Matrix4().makeTranslation(0, 0.25, 0);
+  addSubGeo(trunk, trunkM, () => [0.24, 0.16, 0.10]);
+
+  // 2. Layered evergreen foliage tiers
+  const tiers: Array<[number, number, number, RGB, RGB]> = [
+    [0.55, 0.65, 0.48, [0.08, 0.28, 0.13], [0.14, 0.42, 0.19]],
+    [0.44, 0.60, 0.78, [0.10, 0.34, 0.15], [0.18, 0.48, 0.21]],
+    [0.32, 0.55, 1.08, [0.12, 0.38, 0.17], [0.22, 0.54, 0.24]],
+    [0.18, 0.42, 1.34, [0.15, 0.44, 0.20], [0.26, 0.58, 0.26]],
+  ];
+
+  for (const [r, h, y, bCol, tCol] of tiers) {
+    const cone = new THREE.ConeGeometry(r, h, 7);
+    const m = new THREE.Matrix4().makeTranslation(0, y, 0);
+    addSubGeo(cone, m, (_x, py) => {
+      const t = clamp((py - (y - h * 0.5)) / h, 0, 1);
+      return [lerp(bCol[0], tCol[0], t), lerp(bCol[1], tCol[1], t), lerp(bCol[2], tCol[2], t)];
+    });
+  }
+
+  const out = new THREE.BufferGeometry();
+  out.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
+  out.setAttribute("normal", new THREE.Float32BufferAttribute(nrm, 3));
+  out.setAttribute("color", new THREE.Float32BufferAttribute(col, 3));
+  out.setIndex(idx);
+  return out;
+}
+
 export function islandTreeSpots(seed: number, count: number): TreeSpot[] {
   const spots: TreeSpot[] = [];
   let tries = 0;
-  while (spots.length < count && tries++ < count * 12) {
+  while (spots.length < count && tries++ < count * 15) {
     const a = Math.random() * Math.PI * 2;
-    const r = 0.3 + Math.random() * 0.48;
+    const r = 0.22 + Math.random() * 0.54;
     const u = Math.cos(a) * r;
     const v = Math.sin(a) * r;
     const y = islandHeight(u, v, seed);
-    if (y < 0.1 || y > 0.62) continue;
+    if (y < 0.04 || y > 0.66) continue;
+    // ensure trees grow on mountain slopes, not sheer vertical drops
+    const e = 0.015;
+    const dhdu = (islandHeight(u + e, v, seed) - islandHeight(u - e, v, seed)) / (2 * e);
+    const dhdv = (islandHeight(u, v + e, seed) - islandHeight(u, v - e, seed)) / (2 * e);
+    const slope = Math.hypot(dhdu, dhdv);
+    if (slope > 1.45) continue;
     spots.push({
       x: u,
       y,
       z: v,
-      s: 0.026 + Math.random() * 0.022,
-      lean: (Math.random() - 0.5) * 0.28,
+      s: 0.024 + Math.random() * 0.024,
+      lean: (Math.random() - 0.5) * 0.22,
     });
   }
   return spots;
@@ -761,11 +925,11 @@ export const ISLAND_FRAG = /* glsl */ `
     vec3 N = normalize(vNormal);
     float rim = pow(1.0 - max(dot(N, V), 0.0), 3.0);
     
-    // Directional sunlight + ambient sky fill on the hills
+    // Directional sunlight + ambient sky fill on the mountains
     vec3 sunDir = normalize(vec3(-0.38, 0.14, -0.92));
     float ndotl = max(dot(N, sunDir), 0.0);
-    vec3 ambient = mix(vec3(0.36, 0.42, 0.50), vec3(0.52, 0.40, 0.46), 1.0 - uStorm * 0.7);
-    vec3 directSun = uSunColor * (ndotl * 1.25 + rim * 0.35) * (1.0 - uStorm * 0.85);
+    vec3 ambient = mix(vec3(0.38, 0.44, 0.48), vec3(0.50, 0.44, 0.42), 1.0 - uStorm * 0.7);
+    vec3 directSun = uSunColor * (ndotl * 1.20 + rim * 0.28) * (1.0 - uStorm * 0.85);
     
     vec3 col = vCol * (ambient + directSun);
     col = mix(col, col * 0.38, uStorm * 0.7);

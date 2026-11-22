@@ -17,6 +17,7 @@ import {
   makeFishScaleTexture,
   makeDetailedFishGeometry,
   makeIslandGeometry,
+  makePineTreeGeometry,
   islandTreeSpots,
   ISLAND_VERT,
   ISLAND_FRAG,
@@ -1435,11 +1436,12 @@ export class GameEngine {
       emissiveIntensity: 0.5,
     });
     const treeMat = new THREE.MeshStandardMaterial({
-      color: 0x1a4530,
-      roughness: 0.82,
+      vertexColors: true,
+      roughness: 0.78,
+      metalness: 0.08,
       fog: false,
     });
-    const treeGeo = new THREE.ConeGeometry(0.5, 1.35, 6);
+    const treeGeo = makePineTreeGeometry();
     const foamMat = new THREE.MeshBasicMaterial({
       map: makeFoamRingTexture(),
       color: new THREE.Color(0.88, 0.94, 0.96),
@@ -1474,15 +1476,15 @@ export class GameEngine {
       foam.rotation.y = Math.random() * 6;
       g.add(foam);
 
-      // wind-stunted pines on the gentler slopes
-      const spots = islandTreeSpots(seed, 26);
+      // wind-sculpted alpine pines on the lush mountain slopes
+      const spots = islandTreeSpots(seed, 65);
       if (spots.length) {
         const trees = new THREE.InstancedMesh(treeGeo, treeMat, spots.length);
         const dummy = new THREE.Object3D();
         spots.forEach((sp, k) => {
-          dummy.position.set(sp.x, sp.y + sp.s * 0.55, sp.z);
+          dummy.position.set(sp.x, sp.y + sp.s * 0.12, sp.z);
           dummy.rotation.set(sp.lean, Math.random() * 6, sp.lean * 0.6);
-          dummy.scale.set(sp.s, sp.s * (1.1 + Math.random() * 0.7), sp.s);
+          dummy.scale.set(sp.s, sp.s * (1.0 + Math.random() * 0.6), sp.s);
           dummy.updateMatrix();
           trees.setMatrixAt(k, dummy.matrix);
         });
@@ -2225,10 +2227,10 @@ export class GameEngine {
       map: makeFishScaleTexture(),
       vertexColors: true,
       side: THREE.DoubleSide,
-      roughness: 0.36,
-      metalness: 0.32,
-      emissive: new THREE.Color(0x071b22),
-      emissiveIntensity: 0.22,
+      roughness: 0.22,
+      metalness: 0.56,
+      emissive: new THREE.Color(0x0e3a36),
+      emissiveIntensity: 0.38,
     });
     // Carangiform swimming: a travelling wave runs head -> tail with an envelope
     // that is tiny at the head and large at the tail. Phase and amplitude are
@@ -2277,10 +2279,10 @@ export class GameEngine {
     this.scene.add(this.fishMesh);
 
     const tints = [
-      new THREE.Color(1.0, 0.96, 0.9),
-      new THREE.Color(0.82, 1.0, 0.92),
-      new THREE.Color(1.0, 0.87, 0.73),
-      new THREE.Color(0.78, 0.9, 1.0),
+      new THREE.Color(0.85, 1.05, 1.25), // Bluefin Trevally / Sapphire Tuna
+      new THREE.Color(0.80, 1.25, 0.95), // Emerald Greenback / Spanish Mackerel
+      new THREE.Color(1.18, 1.10, 0.76), // Golden Amberjack / Mahi Dorado
+      new THREE.Color(1.20, 0.94, 0.88), // Coral Snapper / Rose Seabass
     ];
     for (let i = 0; i < FISH_TOTAL; i++) {
       const sc = Math.floor(i / FISH_PER_SCHOOL);
