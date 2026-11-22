@@ -15,7 +15,10 @@ import {
   makeDeckTexture,
   makeDetailedClothTexture,
   makeFishScaleTexture,
-  makeDetailedFishGeometry,
+  makeTunaGeometry,
+  makeDoradoGeometry,
+  makeFlyingFishGeometry,
+  makeSnapperGeometry,
   makeIslandGeometry,
   makePineTreeGeometry,
   islandTreeSpots,
@@ -493,8 +496,6 @@ export class GameEngine {
   private islandGeos: THREE.BufferGeometry[] = [];
   private flameMesh?: THREE.Mesh;
   private pennant?: THREE.Mesh;
-  private fishSwim!: Float32Array;
-  private fishSwimAttr!: THREE.InstancedBufferAttribute;
 
   // shared uniforms (sky + water)
   private U = {
@@ -554,7 +555,9 @@ export class GameEngine {
   private strikes: Strike[] = [];
 
   // swimming fish
-  private fishMesh!: THREE.InstancedMesh;
+  private speciesMeshes: THREE.InstancedMesh[] = [];
+  private speciesSwim: Float32Array[] = [];
+  private speciesSwimAttrs: THREE.InstancedBufferAttribute[] = [];
   private schools: FishSchool[] = [];
   private fishes: Fish[] = [];
   private fishDummy = new THREE.Object3D();
@@ -1481,7 +1484,7 @@ export class GameEngine {
       g.add(foam);
 
       // wind-sculpted alpine pines on the lush mountain slopes
-      const spots = islandTreeSpots(seed, 65);
+      const spots = islandTreeSpots(seed, 90);
       if (spots.length) {
         const trees = new THREE.InstancedMesh(treeGeo, treeMat, spots.length);
         const dummy = new THREE.Object3D();
@@ -2220,25 +2223,13 @@ export class GameEngine {
   /* ================= build: swimming fishes ================= */
 
   private buildFishes() {
-    const geo = makeDetailedFishGeometry();
-    const swim = new THREE.InstancedBufferAttribute(new Float32Array(FISH_TOTAL * 2), 2);
-    swim.setUsage(THREE.DynamicDrawUsage);
-    this.fishSwim = swim.array as Float32Array;
-    this.fishSwimAttr = swim;
-    geo.setAttribute("aSwim", swim);
+    const speciesGeos = [
+      makeTunaGeometry(),
+      makeDoradoGeometry(),
+      makeFlyingFishGeometry(),
+      makeSnapperGeometry(),
+    ];
 
-    const mat = new THREE.MeshStandardMaterial({
-      map: makeFishScaleTexture(),
-      vertexColors: true,
-      side: THREE.DoubleSide,
-      roughness: 0.22,
-      metalness: 0.56,
-      emissive: new THREE.Color(0x0e3a36),
-      emissiveIntensity: 0.38,
-    });
-    // Carangiform swimming: a travelling wave runs head -> tail with an envelope
-    // that is tiny at the head and large at the tail. Phase and amplitude are
-    // integrated on the CPU, so changing tail-beat speed never makes it jump.
     const WAVE = /* glsl */ `
       float swimS = clamp((0.53 - position.z) / 1.24, 0.0, 1.0);
       float swimEnv = 0.03 + 0.12 * swimS + 0.85 * swimS * swimS;
@@ -2247,52 +2238,69 @@ export class GameEngine {
         - sin(-aSwim.x) * 0.16 * aSwim.y * (1.0 - swimS) * (1.0 - swimS);
       float swimSlope = -cos(swimArg) * swimEnv * aSwim.y * (5.6 / 1.24);
     `;
-    mat.onBeforeCompile = (shader) => {
-      shader.vertexShader =
-        `attribute vec2 aSwim;\nattribute vec2 aFlex;\n` + shader.vertexShader;
-      shader.vertexShader = shader.vertexShader.replace(
-        "#include <beginnormal_vertex>",
-        `#include <beginnormal_vertex>
-        {
-          ${WAVE}
-          objectNormal = normalize(vec3(
-            objectNormal.x + objectNormal.z * swimSlope,
-            objectNormal.y,
-            objectNormal.z - objectNormal.x * swimSlope));
-        }`,
-      );
-      shader.vertexShader = shader.vertexShader.replace(
-        "#include <begin_vertex>",
-        `#include <begin_vertex>
-        {
-          ${WAVE}
-          transformed.x += swimLat;
-          // keep body length: a bent tail draws slightly forward
-          transformed.z += 0.5 * swimSlope * swimSlope * (0.53 - position.z) * 0.3;
-          // pectoral fins scull softly, out of phase with the tail beat
-          float scull = sin(aSwim.x * 0.55 + position.z * 6.0);
-          transformed.y += scull * aFlex.y * 0.045;
-          transformed.x += cos(aSwim.x * 0.55) * aFlex.y * sign(position.x) * 0.018;
-        }`,
-      );
-    };
+
+    const scaleMap = makeFishScaleTexture();
+    this.speciesMeshes = [];
+    this.speciesSwim = [];
+    this.speciesSwimAttrs = [];
+
+    for (let s = 0; s < FISH_SCHOOLS; s++) {
+      const geo = speciesGeos[s % speciesGeos.length];
+      const swim = new THREE.InstancedBufferAttribute(new Float32Array(FISH_PER_SCHOOL * 2), 2);
+      swim.setUsage(THREE.DynamicDrawUsage);
+      this.speciesSwim.push(swim.array as Float32Array);
+      this.speciesSwimAttrs.push(swim);
+      geo.setAttribute("aSwim", swim);
+
+      const mat = new THREE.MeshStandardMaterial({
+        map: scaleMap,
+        vertexColors: true,
+        side: THREE.DoubleSide,
+        roughness: 0.22,
+        metalness: 0.55,
+        emissive: new THREE.Color(0x0e3632),
+        emissiveIntensity: 0.35,
+      });
+
+      mat.onBeforeCompile = (shader) => {
+        shader.vertexShader =
+          `attribute vec2 aSwim;\nattribute vec2 aFlex;\n` + shader.vertexShader;
+        shader.vertexShader = shader.vertexShader.replace(
+          "#include <beginnormal_vertex>",
+          `#include <beginnormal_vertex>
+          {
+            ${WAVE}
+            objectNormal = normalize(vec3(
+              objectNormal.x + objectNormal.z * swimSlope,
+              objectNormal.y,
+              objectNormal.z - objectNormal.x * swimSlope));
+          }`,
+        );
+        shader.vertexShader = shader.vertexShader.replace(
+          "#include <begin_vertex>",
+          `#include <begin_vertex>
+          {
+            ${WAVE}
+            transformed.x += swimLat;
+            transformed.z += 0.5 * swimSlope * swimSlope * (0.53 - position.z) * 0.3;
+            float scull = sin(aSwim.x * 0.55 + position.z * 6.0);
+            transformed.y += scull * aFlex.y * 0.045;
+            transformed.x += cos(aSwim.x * 0.55) * aFlex.y * sign(position.x) * 0.018;
+          }`,
+        );
+      };
+
+      const mesh = new THREE.InstancedMesh(geo, mat, FISH_PER_SCHOOL);
+      mesh.frustumCulled = false;
+      for (let k = 0; k < FISH_PER_SCHOOL; k++) {
+        mesh.setColorAt(k, new THREE.Color(1, 1, 1).multiplyScalar(0.92 + Math.random() * 0.16));
+      }
+      if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+      this.scene.add(mesh);
+      this.speciesMeshes.push(mesh);
+    }
 
     this.fishDummy.rotation.order = "YXZ";
-    this.fishMesh = new THREE.InstancedMesh(geo, mat, FISH_TOTAL);
-    this.fishMesh.frustumCulled = false;
-    this.scene.add(this.fishMesh);
-
-    const tints = [
-      new THREE.Color(0.85, 1.05, 1.25), // Bluefin Trevally / Sapphire Tuna
-      new THREE.Color(0.80, 1.25, 0.95), // Emerald Greenback / Spanish Mackerel
-      new THREE.Color(1.18, 1.10, 0.76), // Golden Amberjack / Mahi Dorado
-      new THREE.Color(1.20, 0.94, 0.88), // Coral Snapper / Rose Seabass
-    ];
-    for (let i = 0; i < FISH_TOTAL; i++) {
-      const sc = Math.floor(i / FISH_PER_SCHOOL);
-      this.fishMesh.setColorAt(i, tints[sc % tints.length].clone().multiplyScalar(0.9 + Math.random() * 0.16));
-    }
-    if (this.fishMesh.instanceColor) this.fishMesh.instanceColor.needsUpdate = true;
 
     for (let s = 0; s < FISH_SCHOOLS; s++) {
       this.schools.push({
@@ -2307,22 +2315,30 @@ export class GameEngine {
     for (let i = 0; i < FISH_TOTAL; i++) {
       const school = Math.floor(i / FISH_PER_SCHOOL);
       const sc = this.schools[school];
-      // loose staggered rows, like a real shoal
       const k = i % FISH_PER_SCHOOL;
       const ox = ((k % 3) - 1) * 1.5 + (Math.random() - 0.5) * 0.8;
       const oz = (Math.floor(k / 3) - 0.5) * 2.2 + (Math.random() - 0.5) * 0.9;
       const tail = Math.random() * Math.PI * 2;
-      this.fishSwim[i * 2] = tail;
-      this.fishSwim[i * 2 + 1] = 0.08;
+      this.speciesSwim[school][k * 2] = tail;
+      this.speciesSwim[school][k * 2 + 1] = 0.08;
+
+      const isFlyer = school === 2;
+      const isDorado = school === 1;
+      const isSnapper = school === 3;
+      const scale = isFlyer ? 0.95 + Math.random() * 0.35
+                  : isDorado ? 1.15 + Math.random() * 0.50
+                  : isSnapper ? 1.10 + Math.random() * 0.42
+                  : 1.05 + Math.random() * 0.50;
+
       this.fishes.push({
         school,
         ox,
         oz,
-        scale: 1.02 + Math.random() * 0.62,
+        scale,
         phase: Math.random() * 10,
-        agility: 0.75 + Math.random() * 0.5,
-        depth: -0.02 + Math.random() * 0.06,
-        bodyDepth: 0.8 + Math.random() * 0.42,
+        agility: isFlyer ? 1.1 : isDorado ? 0.95 : 0.8,
+        depth: isFlyer ? -0.01 + Math.random() * 0.03 : -0.02 + Math.random() * 0.06,
+        bodyDepth: isDorado ? 1.15 : isSnapper ? 1.25 : isFlyer ? 0.85 : 0.95,
         heading: Math.PI,
         bank: 0,
         pitch: 0,
@@ -2332,12 +2348,12 @@ export class GameEngine {
         amp: 0.08,
         effort: 0.2,
         porp: Math.random() * Math.PI * 2,
-        porpRate: 1.9 + Math.random() * 1.3,
+        porpRate: isFlyer ? 2.4 : 1.9 + Math.random() * 1.2,
         bob: 0,
         leapT: 0,
-        leapDur: 0.9,
-        leapH: 1.4,
-        leapCooldown: 1.5 + Math.random() * 5,
+        leapDur: isFlyer ? 1.35 : 0.9,
+        leapH: isFlyer ? 2.3 : 1.4,
+        leapCooldown: isFlyer ? 1.2 + Math.random() * 3.5 : 2.0 + Math.random() * 5.0,
         x: sc.x + ox,
         y: -0.3,
         z: sc.z + oz,
@@ -2443,21 +2459,27 @@ export class GameEngine {
       f.effort = damp(f.effort, effortT, 2.5, dt);
       f.tail += (8.5 + f.effort * 8.5) * dt;
       f.amp = damp(f.amp, (0.075 + f.effort * 0.06) * (f.leapT > 0 ? 1.2 : 1), 4, dt);
-      this.fishSwim[i * 2] = f.tail;
-      this.fishSwim[i * 2 + 1] = f.amp;
+
+      const school = f.school;
+      const k = i % FISH_PER_SCHOOL;
+      if (this.speciesSwim[school]) {
+        this.speciesSwim[school][k * 2] = f.tail;
+        this.speciesSwim[school][k * 2 + 1] = f.amp;
+      }
 
       // --- vertical: porpoise along the surface, with occasional full leaps ---
       const waterY = this.surf(f.x, f.z);
       const near = Math.abs(f.z - bz) < 42 && Math.abs(f.x - bx) < 30;
       let vy = 0;
+      const isFlyer = school === 2;
       if (f.leapT > 0) {
         f.leapT += dt / f.leapDur;
         if (f.leapT >= 1) {
           f.leapT = 0;
-          f.leapCooldown = 3 + Math.random() * 5.5;
+          f.leapCooldown = isFlyer ? 1.2 + Math.random() * 3.5 : 2.5 + Math.random() * 5.0;
           f.y = waterY - 0.12;
           if (near) {
-            this.spawnRing(f.x, f.z, 1.6, 0.9, 0.45);
+            this.spawnRing(f.x, f.z, isFlyer ? 1.8 : 1.6, 0.9, 0.45);
             this.burst(f.x, waterY + 0.1, f.z, C.foam, 6, 3, 0.12, 0.55, 7, 2);
           }
         } else {
@@ -2478,11 +2500,11 @@ export class GameEngine {
           this.spawnRing(f.x, f.z, 0.9, 0.7, 0.28);
         }
         f.bob = bob;
-        if (f.leapCooldown <= 0 && near && this.storm < 0.55 && bob > 0.4) {
+        if (f.leapCooldown <= 0 && near && this.storm < 0.55 && bob > 0.35) {
           f.leapT = 0.001;
-          f.leapH = 1.1 + Math.random() * 0.9;
-          f.leapDur = 0.62 + f.leapH * 0.2;
-          this.spawnRing(f.x, f.z, 1.3, 0.85, 0.38);
+          f.leapH = isFlyer ? 2.3 + Math.random() * 1.3 : 1.1 + Math.random() * 0.9;
+          f.leapDur = isFlyer ? 1.35 + f.leapH * 0.25 : 0.62 + f.leapH * 0.2;
+          this.spawnRing(f.x, f.z, isFlyer ? 1.8 : 1.3, 0.85, 0.38);
           this.burst(f.x, waterY + 0.1, f.z, C.foam, 5, 2.6, 0.1, 0.45, 7, 2);
         }
       }
@@ -2495,10 +2517,14 @@ export class GameEngine {
       dummy.rotation.set(f.pitch, f.heading, f.bank);
       dummy.scale.set(f.scale * 0.94, f.scale * f.bodyDepth, f.scale * (0.94 + f.bodyDepth * 0.1));
       dummy.updateMatrix();
-      this.fishMesh.setMatrixAt(i, dummy.matrix);
+      if (this.speciesMeshes[school]) {
+        this.speciesMeshes[school].setMatrixAt(k, dummy.matrix);
+      }
     }
-    this.fishSwimAttr.needsUpdate = true;
-    this.fishMesh.instanceMatrix.needsUpdate = true;
+    for (let s = 0; s < this.speciesMeshes.length; s++) {
+      if (this.speciesSwimAttrs[s]) this.speciesSwimAttrs[s].needsUpdate = true;
+      if (this.speciesMeshes[s]) this.speciesMeshes[s].instanceMatrix.needsUpdate = true;
+    }
   }
 
   private buildParticles() {
@@ -2913,11 +2939,14 @@ export class GameEngine {
 
   private recycleIsland(g: THREE.Group, z?: number) {
     const side = Math.random() < 0.5 ? -1 : 1;
-    const s = 26 + Math.random() * 30;
-    g.scale.set(s * (0.9 + Math.random() * 0.8), s * (0.48 + Math.random() * 0.36), s);
+    const s = 34 + Math.random() * 40;
+    const sx = s * (0.95 + Math.random() * 0.5);
+    const sy = s * (0.58 + Math.random() * 0.42);
+    const sz = s * (0.95 + Math.random() * 0.5);
+    g.scale.set(sx, sy, sz);
     g.position.set(
-      side * (95 + Math.random() * 150),
-      -g.scale.y * 0.22,
+      side * (85 + Math.random() * 155),
+      -g.scale.y * 0.16,
       z ?? this.boat.position.z - (360 + Math.random() * 260),
     );
     g.rotation.y = Math.random() * Math.PI * 2;
