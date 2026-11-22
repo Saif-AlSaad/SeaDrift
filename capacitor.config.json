@@ -1,0 +1,14 @@
+{
+  "appId": "com.seadrift.game",
+  "appName": "SeaDrift",
+  "webDir": "dist",
+  "server": {
+    "androidScheme": "https"
+  },
+  "backgroundColor": "#041218",
+  "android": {
+    "backgroundColor": "#041218",
+    "allowMixedContent": true,
+    "webContentsDebuggingEnabled": false
+  }
+}
