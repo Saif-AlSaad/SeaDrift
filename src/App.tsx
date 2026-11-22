@@ -910,86 +910,81 @@ export default function App() {
 
       {/* ------------------------- GAME OVER ------------------------- */}
       {state === "gameover" && final && (
-        <div className="absolute inset-0 overflow-y-auto bg-ink/50">
-          <div className="flex min-h-full items-center justify-center px-4 py-8">
-            <div className="panel anim-popIn relative w-full max-w-md p-7 text-center md:p-8">
-              {newBest && (
-                <div className="stamp pointer-events-none absolute -top-4 right-5 rounded-md border-2 border-amber bg-ink2 px-3 py-1 font-display text-xs font-black tracking-[0.2em] text-amber shadow-[0_0_24px_rgba(255,180,84,0.5)]">
-                  NEW BEST
+        <div className="anim-modal-backdrop absolute inset-0 z-20 flex items-center justify-center bg-ink/70 px-4 backdrop-blur-md">
+          <div className="glass-modal anim-modal-card relative w-full max-w-sm p-6 text-center shadow-[0_20px_60px_rgba(0,0,0,0.6)] sm:p-7">
+            {newBest && (
+              <div className="pointer-events-none absolute -top-3 left-1/2 -translate-x-1/2 rounded-full border border-amber/50 bg-ink2/95 px-3.5 py-0.5 font-display text-[10px] font-black tracking-[0.22em] text-amber shadow-[0_0_24px_rgba(255,180,84,0.45)]">
+                ★ NEW BEST
+              </div>
+            )}
+
+            <h2 className="font-display text-2xl font-black tracking-wider text-foam sm:text-3xl">
+              THE LAMP GOES OUT
+            </h2>
+
+            {/* Score */}
+            <div className="mt-5">
+              <div className="inline-flex items-center gap-1.5 rounded-full border border-foam/10 bg-foam/[0.04] px-3 py-0.5 text-[10px] font-semibold tracking-wider text-foam/60">
+                <span>{DIFF_INFO[final.difficulty].label}</span>
+                <span className="text-foam/30">·</span>
+                <span className="text-amber">{DIFF_INFO[final.difficulty].mult}</span>
+              </div>
+
+              <div className="mt-2 font-display text-5xl font-black text-amber [text-shadow:0_0_35px_rgba(255,180,84,0.45)] sm:text-6xl">
+                {final.score.toLocaleString("en-US")}
+              </div>
+
+              {!newBest && scores[0]?.s > 0 && (
+                <div className="mt-1 text-[11px] font-medium tracking-wide text-foam/45">
+                  BEST <span className="text-foam/75">{scores[0].s.toLocaleString("en-US")}</span>
                 </div>
               )}
-              <h2 className="font-display text-3xl font-bold tracking-wide text-foam md:text-4xl">
-                THE LAMP GOES OUT
-              </h2>
-              <p className="mt-2 text-sm italic text-foam/60">
-                {final.score >= 5000
-                  ? "the horizon glows where you passed"
-                  : final.score >= 2500
-                    ? "the dusk will remember your wake"
-                    : final.score >= 1000
-                      ? "every light finds its way back to the sea"
-                      : "even short voyages leave a shimmer"}
-              </p>
+            </div>
 
-              <div className="mt-6">
-                <div className="text-[10px] font-semibold tracking-[0.34em] text-foam/55">
-                  VOYAGE SCORE · {DIFF_INFO[final.difficulty].label.toUpperCase()} ({DIFF_INFO[final.difficulty].mult})
-                </div>
-                <div className="mt-1 font-display text-5xl font-black text-amber [text-shadow:0_0_30px_rgba(255,180,84,0.45)]">
-                  {final.score.toLocaleString("en-US")}
-                </div>
-              </div>
-
-              <div className="mt-5 grid grid-cols-3 gap-2">
-                {[
-                  ["WISPS", `${final.wisps}`],
-                  ["DISTANCE", `${final.dist}m`],
-                  ["BEST COMBO", `×${final.maxCombo}`],
-                ].map(([label, value]) => (
-                  <div
-                    key={label}
-                    className="rounded-lg border border-foam/10 bg-foam/[0.04] px-2 py-2.5"
-                  >
-                    <div className="font-display text-lg font-bold text-foam">{value}</div>
-                    <div className="mt-0.5 text-[9px] font-semibold tracking-[0.2em] text-foam/50">
-                      {label}
-                    </div>
+            {/* Stats */}
+            <div className="mt-6 grid grid-cols-3 gap-2">
+              {[
+                ["WISPS", `${final.wisps}`],
+                ["DISTANCE", `${final.dist}m`],
+                ["COMBO", `×${final.maxCombo}`],
+              ].map(([label, value]) => (
+                <div
+                  key={label}
+                  className="rounded-xl border border-foam/10 bg-foam/[0.04] py-2.5 px-1"
+                >
+                  <div className="font-display text-base font-bold text-foam sm:text-lg">{value}</div>
+                  <div className="mt-0.5 text-[9px] font-semibold tracking-wider text-foam/45">
+                    {label}
                   </div>
-                ))}
-              </div>
-
-              <div className="mt-5 text-left">
-                <h3 className="font-display text-[11px] font-bold tracking-[0.28em] text-lumen">
-                  BEST VOYAGES
-                </h3>
-                <div className="mt-2.5">
-                  <ScoreList scores={scores} highlightRank={newRank} />
                 </div>
-              </div>
+              ))}
+            </div>
 
-              <div className="mt-6 flex flex-col gap-2.5 sm:flex-row">
-                <button
-                  onClick={restart}
-                  className="btn-primary flex flex-1 items-center justify-center gap-2 px-6 py-3.5 text-sm font-bold tracking-[0.15em]"
-                >
-                  {I.play("h-4 w-4")} SAIL AGAIN
-                </button>
-                <button
-                  onClick={toMenu}
-                  className="btn-ghost flex-1 px-6 py-3.5 text-sm font-semibold tracking-wide"
-                >
-                  Harbor
-                </button>
-              </div>
-              <p className="mt-3 text-[11px] text-foam/45">
-                {IS_TOUCH ? (
-                  "tap Sail Again to set out once more"
-                ) : (
-                  <>
-                    press <kbd>R</kbd> or <kbd>SPACE</kbd> to sail again
-                  </>
-                )}
-              </p>
+            {/* Actions */}
+            <div className="mt-6 flex flex-col gap-2.5 sm:flex-row">
+              <button
+                onClick={restart}
+                className="btn-primary flex flex-1 items-center justify-center gap-2 py-3 text-xs font-bold tracking-[0.16em]"
+              >
+                {I.play("h-3.5 w-3.5")} SAIL AGAIN
+              </button>
+              <button
+                onClick={toMenu}
+                className="btn-ghost flex-1 py-3 text-xs font-semibold tracking-wider"
+              >
+                HARBOR
+              </button>
+            </div>
+
+            {/* Discreet Leaderboard Link */}
+            <div className="mt-4 flex justify-center">
+              <button
+                onClick={() => setModal("scores")}
+                className="flex items-center gap-1.5 text-[11px] font-medium text-foam/40 transition-colors hover:text-amber"
+              >
+                {I.trophy("h-3.5 w-3.5")}
+                <span>Leaderboard</span>
+              </button>
             </div>
           </div>
         </div>
@@ -1018,7 +1013,7 @@ export default function App() {
               </button>
             </div>
             <div className="mt-4">
-              <ScoreList scores={scores} limit={8} />
+              <ScoreList scores={scores} highlightRank={newRank} limit={8} />
             </div>
             <button
               onClick={() => setModal("none")}
