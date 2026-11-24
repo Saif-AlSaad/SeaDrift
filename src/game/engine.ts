@@ -24,6 +24,9 @@ import {
   islandTreeSpots,
   ISLAND_VERT,
   ISLAND_FRAG,
+  makeLighthouseGroup,
+  makeShipwreckGroup,
+  makeBellBuoyGroup,
 } from "./scenery";
 
 export type GameState = "menu" | "playing" | "paused" | "gameover";
@@ -34,6 +37,7 @@ export interface HudData {
   comboT: number;
   energy: number;
   dist: number;
+  biome: string;
 }
 
 export interface RunStats {
@@ -53,7 +57,7 @@ export interface PopupData {
 
 export interface AlertData {
   text: string;
-  tone: "warn" | "calm";
+  tone: "warn" | "calm" | "milestone";
 }
 
 export interface EngineCallbacks {
@@ -419,6 +423,75 @@ interface Ring {
   active: boolean;
 }
 
+interface Shipwreck {
+  group: THREE.Group;
+  active: boolean;
+  x: number;
+  z: number;
+  s: number;
+}
+
+interface BellBuoy {
+  group: THREE.Group;
+  light: THREE.PointLight;
+  active: boolean;
+  x: number;
+  z: number;
+  sounded: boolean;
+  phase: number;
+}
+
+const BIOMES = {
+  dusk: {
+    name: "Dusk Shallows",
+    horizon: new THREE.Color("#e88448"),
+    mid: new THREE.Color("#856876"),
+    zenith: new THREE.Color("#1d3b52"),
+    haze: new THREE.Color("#73848e"),
+    sunColor: new THREE.Color("#f4ad6c"),
+    sunGlare: 1.0,
+    starBoost: 1.0,
+    deep: new THREE.Color("#08323f"),
+    scatter: new THREE.Color("#1ea49c"),
+    fogDensity: 0.0036,
+    fogColor: new THREE.Color("#6b7c87"),
+    hemiInt: 1.0,
+    sunInt: 2.0,
+  },
+  abyss: {
+    name: "The Starlit Abyss",
+    horizon: new THREE.Color("#081528"),
+    mid: new THREE.Color("#0b1932"),
+    zenith: new THREE.Color("#020512"),
+    haze: new THREE.Color("#071220"),
+    sunColor: new THREE.Color("#2a4565"),
+    sunGlare: 0.02,
+    starBoost: 2.5,
+    deep: new THREE.Color("#020b18"),
+    scatter: new THREE.Color("#0b3a56"),
+    fogDensity: 0.0042,
+    fogColor: new THREE.Color("#071322"),
+    hemiInt: 0.45,
+    sunInt: 0.35,
+  },
+  graveyard: {
+    name: "The Sunken Graveyard",
+    horizon: new THREE.Color("#102227"),
+    mid: new THREE.Color("#14282e"),
+    zenith: new THREE.Color("#081418"),
+    haze: new THREE.Color("#183036"),
+    sunColor: new THREE.Color("#243d3a"),
+    sunGlare: 0.02,
+    starBoost: 1.2,
+    deep: new THREE.Color("#041014"),
+    scatter: new THREE.Color("#0e3c36"),
+    fogDensity: 0.0125,
+    fogColor: new THREE.Color("#122328"),
+    hemiInt: 0.50,
+    sunInt: 0.40,
+  },
+};
+
 interface Strike {
   x: number;
   z: number;
@@ -504,6 +577,7 @@ export class GameEngine {
     uStorm: { value: 0 },
     uFlash: { value: 0 },
     uSunGlare: { value: 1.0 },
+    uStarBoost: { value: 1.0 },
     uSunDir: { value: sunDir() },
     uSunColor: { value: new THREE.Color("#f4ad6c") },
     uHorizon: { value: new THREE.Color("#e88448") },
@@ -517,8 +591,23 @@ export class GameEngine {
   private uStrike = [new THREE.Vector4(0, 0, 1, 0), new THREE.Vector4(0, 0, 1, 0)];
   private uBoat = new THREE.Vector4(0, 0, 0, 1);
   private uCloudShift = { value: 0 };
-  private uFogDensity = { value: 0.006 };
+  private uFogDensity = { value: 0.0036 };
   private uFishTime = { value: 0 };
+  private uDeepColor = new THREE.Color("#08323f");
+  private uScatterColor = new THREE.Color("#1ea49c");
+
+  // Biomes & Lighthouse Haven
+  private currentBiome: "dusk" | "abyss" | "graveyard" = "dusk";
+  private currentBiomeName = "Dusk Shallows";
+  private lastBiomeAnnounced = "dusk";
+  private lastLighthouseTriggered = 0;
+  private lighthouse!: THREE.Group;
+  private lighthouseBeam!: THREE.Group;
+  private lighthouseLight!: THREE.PointLight;
+  private shipwrecks: Shipwreck[] = [];
+  private buoys: BellBuoy[] = [];
+  private shipwreckTimer = 14;
+  private buoyTimer = 18;
 
   // boat
   private boat!: THREE.Group;
@@ -747,6 +836,7 @@ export class GameEngine {
     this.buildFishes();
     this.buildParticles();
     this.buildWeather();
+    this.buildBiomes();
     this.buildComposer(w, h);
     this.applySettings(initialSettings);
 
@@ -839,6 +929,22 @@ export class GameEngine {
     this.stormTimer = tune.stormStart;
     this.pushVx = 0;
     this.coreAmt = 0;
+    this.currentBiome = "dusk";
+    this.currentBiomeName = "Dusk Shallows";
+    this.lastBiomeAnnounced = "dusk";
+    this.lastLighthouseTriggered = 0;
+    this.shipwreckTimer = 14;
+    this.buoyTimer = 18;
+    if (this.lighthouse) this.lighthouse.visible = false;
+    for (const s of this.shipwrecks) {
+      s.active = false;
+      s.group.visible = false;
+    }
+    for (const b of this.buoys) {
+      b.active = false;
+      b.group.visible = false;
+      b.sounded = false;
+    }
     // re-centre the world on the boat without moving the camera relative to it
     const sx = -this.boat.position.x;
     const sz = -this.boat.position.z;
@@ -1187,6 +1293,7 @@ export class GameEngine {
       fragmentShader: /* glsl */ `
         uniform float uTime;
         uniform float uCloudShift;
+        uniform float uStarBoost;
         varying vec3 vDir;
         ${GLSL_SKY}
         ${GLSL_NOISE}
@@ -1197,15 +1304,37 @@ export class GameEngine {
           float calm = 1.0 - uStorm;
 
           // stars
-          float starMask = smoothstep(0.2, 0.75, d.y) * calm;
+          float starMask = smoothstep(0.15, 0.75, d.y) * calm;
           if (starMask > 0.01) {
-            vec2 sp = d.xz / (d.y + 0.35) * 46.0;
+            vec2 sp = d.xz / (d.y + 0.35) * 48.0;
             vec2 cell = floor(sp);
             float h = hash21(cell);
             vec2 off = vec2(hash21(cell + 7.3), hash21(cell + 13.1)) - 0.5;
             float dd = length(fract(sp) - 0.5 - off * 0.6);
             float tw = 0.6 + 0.4 * sin(uTime * (1.5 + h * 3.0) + h * 40.0);
-            col += vec3(0.8, 0.9, 1.0) * step(0.9, h) * smoothstep(0.1, 0.0, dd) * tw * starMask * 1.25;
+            float thresh = 0.90 - (uStarBoost - 1.0) * 0.04;
+            col += vec3(0.8, 0.9, 1.0) * step(thresh, h) * smoothstep(0.1, 0.0, dd) * tw * starMask * (1.2 + (uStarBoost - 1.0) * 0.8);
+
+            // Milky Way galactic dust lane (prominent in Starlit Abyss)
+            float mw = smoothstep(0.2, 0.85, sin(d.x * 2.1 + d.z * 1.5 + 1.2)) * smoothstep(0.18, 0.75, d.y);
+            col += vec3(0.08, 0.14, 0.28) * mw * (1.0 - uSunGlare) * starMask * 0.9;
+
+            // Shooting stars in the night sky
+            if (uStarBoost > 1.3) {
+              float mt = mod(uTime * 0.4, 6.0);
+              if (mt < 0.65) {
+                float prog = mt / 0.65;
+                vec2 p1 = vec2(-0.4, 0.6);
+                vec2 p2 = vec2(0.5, -0.3);
+                vec2 curP = d.xz / (d.y + 0.35);
+                vec2 head = mix(p1, p2, prog);
+                vec2 tail = mix(p1, p2, max(0.0, prog - 0.25));
+                vec2 pa = curP - tail, ba = head - tail;
+                float segH = clamp(dot(pa, ba) / dot(ba, ba), 0.0, 1.0);
+                float mDist = length(pa - ba * segH);
+                col += vec3(0.9, 0.96, 1.0) * smoothstep(0.02, 0.002, mDist) * (1.0 - prog) * 2.8;
+              }
+            }
           }
 
           // soft dusk sun disk (eye-friendly, no blinding flare)
@@ -1248,8 +1377,8 @@ export class GameEngine {
       defines: { NG: this.NG, FBM_OCT: 3 },
       uniforms: {
         ...this.U,
-        uDeep: { value: new THREE.Color("#08323f") },
-        uScatter: { value: new THREE.Color("#1ea49c") },
+        uDeep: { value: this.uDeepColor },
+        uScatter: { value: this.uScatterColor },
         uFogDensity: this.uFogDensity,
         uGlowPos: { value: this.uGlowPos },
         uGlowCol: { value: this.uGlowCol },
@@ -2647,6 +2776,75 @@ export class GameEngine {
     this.boltGlow = mk(new THREE.Color(0.2, 0.28, 0.6));
   }
 
+  private buildBiomes() {
+    const lh = makeLighthouseGroup();
+    this.lighthouse = lh.group;
+    this.lighthouseBeam = lh.beamPivot;
+    this.lighthouseLight = lh.light;
+    this.lighthouse.visible = false;
+    this.scene.add(this.lighthouse);
+
+    for (let i = 0; i < 6; i++) {
+      const grp = makeShipwreckGroup();
+      grp.visible = false;
+      this.scene.add(grp);
+      this.shipwrecks.push({ group: grp, active: false, x: 0, z: 0, s: 3.5 });
+    }
+
+    for (let i = 0; i < 6; i++) {
+      const bb = makeBellBuoyGroup();
+      bb.group.visible = false;
+      this.scene.add(bb.group);
+      this.buoys.push({
+        group: bb.group,
+        light: bb.light,
+        active: false,
+        x: 0,
+        z: 0,
+        sounded: false,
+        phase: Math.random() * Math.PI * 2,
+      });
+    }
+  }
+
+  private spawnShipwreck() {
+    const s = this.shipwrecks.find((q) => !q.active);
+    if (!s) return;
+    s.active = true;
+    s.x = (Math.random() * 2 - 1) * (STEER_RANGE - 2);
+    s.z = this.boat.position.z - (90 + Math.random() * 30);
+    s.s = 3.2 + Math.random() * 0.8;
+    s.group.scale.setScalar(s.s / 3.5);
+    s.group.rotation.y = (Math.random() - 0.5) * 0.8;
+    s.group.position.set(s.x, this.surf(s.x, s.z) - 0.5, s.z);
+    s.group.visible = true;
+  }
+
+  private spawnBellBuoy() {
+    const b = this.buoys.find((q) => !q.active);
+    if (!b) return;
+    b.active = true;
+    b.x = (Math.random() * 2 - 1) * (STEER_RANGE + 3);
+    b.z = this.boat.position.z - (85 + Math.random() * 25);
+    b.sounded = false;
+    b.phase = Math.random() * Math.PI * 2;
+    b.group.position.set(b.x, this.surf(b.x, b.z), b.z);
+    b.group.visible = true;
+  }
+
+  private hitShipwreck(s: Shipwreck) {
+    s.active = false;
+    s.group.visible = false;
+    const bx = this.boat.position.x;
+    const bz = this.boat.position.z;
+    const side = bx >= s.x ? 1 : -1;
+    this.pushVx = side * 13;
+    this.audio.thud();
+    this.burst(bx, 0.6, bz - 1.6, C.wood, 24, 6.5, 0.25, 1.0, 9, 1.4);
+    this.burst(bx, 0.4, bz - 1.6, C.foam, 16, 5, 0.3, 0.8, 6, 2.2);
+    this.damage(22, 0.95, bx, bz);
+  }
+
   /* ================= surface ================= */
 
   private surf(x: number, z: number): number {
@@ -2933,6 +3131,20 @@ export class GameEngine {
     this.boltT = 0;
     this.bolt.visible = false;
     this.boltGlow.visible = false;
+    for (const s of this.shipwrecks) {
+      s.active = false;
+      s.group.visible = false;
+    }
+    for (const b of this.buoys) {
+      b.active = false;
+      b.group.visible = false;
+      b.sounded = false;
+    }
+    if (this.lighthouse) this.lighthouse.visible = false;
+    this.currentBiome = "dusk";
+    this.currentBiomeName = "Dusk Shallows";
+    this.lastBiomeAnnounced = "dusk";
+    this.lastLighthouseTriggered = 0;
     this.pCount = 0;
     this.pGeo.setDrawRange(0, 0);
   }
@@ -3296,11 +3508,6 @@ export class GameEngine {
     U.uAmp.value = this.amp;
     U.uStorm.value = this.storm;
     U.uFlash.value = this.flash;
-    this.uFogDensity.value = 0.006 + this.storm * 0.003;
-    this.fog.density = this.uFogDensity.value;
-    this.fog.color.copy(C.fogCalm).lerp(C.fogStorm, this.storm * 0.9);
-    this.hemi.intensity = 1.0 - this.storm * 0.5 + this.flash * 2.2;
-    this.sun.intensity = 2.0 * (1 - this.storm * 0.88);
     if (Math.abs(this.storm - this.lastRain) > 0.04) {
       this.lastRain = this.storm;
       this.audio.setRain(this.storm);
@@ -3320,6 +3527,88 @@ export class GameEngine {
     else this.speed += (12 - this.speed) * Math.min(1, rawDt * 2);
     boat.position.z -= this.speed * dt;
     const bz = boat.position.z;
+    const distMeters = Math.max(0, Math.floor(-bz / 10));
+
+    // ---------- biomes & atmosphere ----------
+    let targetBiome: "dusk" | "abyss" | "graveyard" = "dusk";
+    if (distMeters >= 700) targetBiome = "graveyard";
+    else if (distMeters >= 400) targetBiome = "abyss";
+
+    if (this.state === "playing" && targetBiome !== this.lastBiomeAnnounced) {
+      this.lastBiomeAnnounced = targetBiome;
+      this.currentBiome = targetBiome;
+      this.currentBiomeName = BIOMES[targetBiome].name;
+      this.cb.onAlert({ text: `Entering ${this.currentBiomeName}`, tone: "milestone" });
+      this.audio.biomeCue();
+    }
+
+    const tb = BIOMES[this.currentBiome];
+    const bLerp = Math.min(1, dt * 1.5);
+    U.uHorizon.value.lerp(tb.horizon, bLerp);
+    U.uMid.value.lerp(tb.mid, bLerp);
+    U.uZenith.value.lerp(tb.zenith, bLerp);
+    U.uHaze.value.lerp(tb.haze, bLerp);
+    U.uSunColor.value.lerp(tb.sunColor, bLerp);
+    U.uSunGlare.value = lerp(U.uSunGlare.value, tb.sunGlare, bLerp);
+    U.uStarBoost.value = lerp(U.uStarBoost.value, tb.starBoost, bLerp);
+    this.uDeepColor.lerp(tb.deep, bLerp);
+    this.uScatterColor.lerp(tb.scatter, bLerp);
+
+    const baseFog = tb.fogDensity + this.storm * 0.004;
+    this.uFogDensity.value = lerp(this.uFogDensity.value, baseFog, bLerp);
+    this.fog.density = this.uFogDensity.value;
+    this.fog.color.lerp(tb.fogColor, bLerp).lerp(C.fogStorm, this.storm * 0.9);
+    this.hemi.intensity = tb.hemiInt * (1.0 - this.storm * 0.5) + this.flash * 2.2;
+    this.sun.intensity = tb.sunInt * (1.0 - this.storm * 0.88);
+
+    // ---------- lighthouse havens (every 200m) ----------
+    const nextMilestoneM = Math.floor(distMeters / 200 + 1) * 200;
+    const milestoneZ = -nextMilestoneM * 10;
+    const distToMilestoneM = (bz - milestoneZ) / 10;
+
+    if (distToMilestoneM < 220 && distToMilestoneM > -30) {
+      this.lighthouse.visible = true;
+      this.lighthouse.position.set(34, this.surf(34, milestoneZ) - 2.5, milestoneZ);
+      this.lighthouseBeam.rotation.y = this.t * 0.8;
+      this.lighthouseLight.intensity = 180;
+
+      if (this.state === "playing" && bz <= milestoneZ && this.lastLighthouseTriggered < nextMilestoneM) {
+        this.lastLighthouseTriggered = nextMilestoneM;
+        this.audio.foghorn();
+        this.energy = Math.min(100, this.energy + 50);
+        const havenBonus = 500;
+        this.score += havenBonus;
+        this.cb.onPopup({
+          text: `+${havenBonus} HAVEN`,
+          x: 50,
+          y: 35,
+          tone: "gold",
+        });
+        this.cb.onAlert({
+          text: `Lighthouse Haven · ${nextMilestoneM}m Reached!`,
+          tone: "milestone",
+        });
+        this.lanternPulse = 2.0;
+        const bpx = boat.position.x;
+        for (let p = 0; p < 26; p++) {
+          this.emit(
+            bpx + (Math.random() - 0.5) * 3,
+            this.boatY + 1.2,
+            bz + (Math.random() - 0.5) * 3,
+            (Math.random() - 0.5) * 6,
+            2 + Math.random() * 4,
+            (Math.random() - 0.5) * 6,
+            new THREE.Color("#facc15"),
+            0.18,
+            1.2,
+            6,
+            0.5,
+          );
+        }
+      }
+    } else {
+      if (this.lighthouse) this.lighthouse.visible = false;
+    }
 
     // ---------- currents: whirlpools + crosswind ----------
     let ext = this.windX;
@@ -3519,7 +3808,19 @@ export class GameEngine {
       this.jellyTimer -= dt;
       if (this.jellyTimer <= 0) {
         this.spawnJelly();
-        this.jellyTimer = 21 + Math.random() * 10;
+        this.jellyTimer = (this.currentBiome === "abyss" ? 7 : 21) + Math.random() * 8;
+      }
+      if (this.currentBiome === "graveyard" || distMeters >= 680) {
+        this.shipwreckTimer -= dt;
+        if (this.shipwreckTimer <= 0) {
+          this.spawnShipwreck();
+          this.shipwreckTimer = 8 + Math.random() * 6;
+        }
+        this.buoyTimer -= dt;
+        if (this.buoyTimer <= 0) {
+          this.spawnBellBuoy();
+          this.buoyTimer = 10 + Math.random() * 7;
+        }
       }
       if (this.stormOn && this.storm > 0.6) {
         this.strikeTimer -= dt;
@@ -3770,6 +4071,46 @@ export class GameEngine {
     // ---------- swimming fishes ----------
     this.updateFishes(dt, bx, bz);
 
+    // ---------- shipwrecks ----------
+    for (const s of this.shipwrecks) {
+      if (!s.active) continue;
+      if (s.z > bz + 30) {
+        s.active = false;
+        s.group.visible = false;
+        continue;
+      }
+      s.group.position.y = this.surf(s.x, s.z) - 0.4;
+      if (playing && this.invulnT <= 0) {
+        const dz = Math.abs(s.z - bz);
+        const dx = Math.abs(s.x - bx);
+        if (dz < 4.2 && dx < s.s * 0.9) {
+          this.hitShipwreck(s);
+        }
+      }
+    }
+
+    // ---------- bell buoys ----------
+    for (const b of this.buoys) {
+      if (!b.active) continue;
+      if (b.z > bz + 30) {
+        b.active = false;
+        b.group.visible = false;
+        continue;
+      }
+      b.group.position.y = this.surf(b.x, b.z) - 0.2;
+      b.group.rotation.z = Math.sin(this.t * 2.2 + b.phase) * 0.16;
+      b.group.rotation.x = Math.cos(this.t * 1.8 + b.phase) * 0.12;
+      b.light.intensity = 1.4 + Math.sin(this.t * 6 + b.phase) * 1.0;
+
+      if (!b.sounded && Math.abs(b.z - bz) < 22 && Math.abs(b.x - bx) < 18) {
+        b.sounded = true;
+        this.audio.bellBuoy();
+      }
+      if (playing && Math.abs(b.z - bz) < 3.2 && Math.abs(b.x - bx) < 2.2) {
+        this.closeCall();
+      }
+    }
+
     // ---------- bow spray ----------
     if (this.speed > 6 && !over) {
       this.sprayTimer -= dt;
@@ -3884,6 +4225,7 @@ export class GameEngine {
         comboT: this.comboT,
         energy: this.energy,
         dist: Math.floor(-bz / 10),
+        biome: this.currentBiomeName,
       });
     }
   }
@@ -3907,6 +4249,13 @@ export class GameEngine {
       if (m.active && n < this.NG && Math.abs(m.z - bz) < 60) {
         pos[n].set(m.x, m.group.position.y + 1.0, m.z, 0.85);
         col[n].set(1.0, 0.16, 0.12);
+        n++;
+      }
+    }
+    for (const b of this.buoys) {
+      if (b.active && n < this.NG && Math.abs(b.z - bz) < 70) {
+        pos[n].set(b.x, b.group.position.y + 2.5, b.z, 1.8);
+        col[n].set(0.12, 0.95, 0.55);
         n++;
       }
     }

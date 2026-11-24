@@ -1311,3 +1311,239 @@ export const ISLAND_FRAG = /* glsl */ `
     #include <colorspace_fragment>
   }
 `;
+
+/* ================================================================
+   BIOME SCENERY: LIGHTHOUSE HAVEN, SHIPWRECKS & BELL BUOYS
+   ================================================================ */
+
+export function makeLighthouseGroup(): {
+  group: THREE.Group;
+  beamPivot: THREE.Group;
+  light: THREE.PointLight;
+} {
+  const group = new THREE.Group();
+
+  // 1. Cliff Island Base
+  const cliffGeo = new THREE.CylinderGeometry(15, 20, 14, 12);
+  const cliffPos = cliffGeo.attributes.position;
+  for (let i = 0; i < cliffPos.count; i++) {
+    const px = cliffPos.getX(i);
+    const py = cliffPos.getY(i);
+    const pz = cliffPos.getZ(i);
+    const r = Math.hypot(px, pz);
+    if (r > 1) {
+      const noisy = Math.sin(px * 0.8) * Math.cos(pz * 0.8) * 1.8;
+      cliffPos.setXYZ(i, px + noisy, py, pz + noisy);
+    }
+  }
+  cliffGeo.computeVertexNormals();
+  const cliffMat = new THREE.MeshStandardMaterial({
+    color: 0x181e22,
+    roughness: 0.9,
+    metalness: 0.1,
+  });
+  const cliff = new THREE.Mesh(cliffGeo, cliffMat);
+  cliff.position.y = 5;
+  group.add(cliff);
+
+  // 2. Tower with Red/White Bands
+  const can = document.createElement("canvas");
+  can.width = 64;
+  can.height = 256;
+  const ctx = can.getContext("2d")!;
+  ctx.fillStyle = "#f0efe8";
+  ctx.fillRect(0, 0, 64, 256);
+  ctx.fillStyle = "#b8261e";
+  ctx.fillRect(0, 50, 64, 52);
+  ctx.fillRect(0, 154, 64, 52);
+  const towerTex = new THREE.CanvasTexture(can);
+
+  const towerGeo = new THREE.CylinderGeometry(3.6, 5.2, 30, 16);
+  const towerMat = new THREE.MeshStandardMaterial({
+    map: towerTex,
+    roughness: 0.7,
+    metalness: 0.05,
+  });
+  const tower = new THREE.Mesh(towerGeo, towerMat);
+  tower.position.y = 12 + 15;
+  group.add(tower);
+
+  // 3. Gallery Platform & Railing
+  const galleryGeo = new THREE.CylinderGeometry(6.0, 6.0, 1.0, 16);
+  const galleryMat = new THREE.MeshStandardMaterial({ color: 0x16181b, roughness: 0.6 });
+  const gallery = new THREE.Mesh(galleryGeo, galleryMat);
+  gallery.position.y = 12 + 30;
+  group.add(gallery);
+
+  const railGeo = new THREE.CylinderGeometry(5.8, 5.8, 1.4, 16, 1, true);
+  const railMat = new THREE.MeshStandardMaterial({ color: 0x0f1113, roughness: 0.5, side: THREE.DoubleSide });
+  const rail = new THREE.Mesh(railGeo, railMat);
+  rail.position.y = 12 + 31.2;
+  group.add(rail);
+
+  // 4. Lantern Room (Glass Cylinder + Golden Lamp)
+  const lanternGeo = new THREE.CylinderGeometry(4.2, 4.2, 5.2, 12, 1, true);
+  const lanternMat = new THREE.MeshStandardMaterial({
+    color: 0x1a2228,
+    metalness: 0.8,
+    roughness: 0.2,
+    transparent: true,
+    opacity: 0.45,
+    side: THREE.DoubleSide,
+  });
+  const lanternRoom = new THREE.Mesh(lanternGeo, lanternMat);
+  lanternRoom.position.y = 12 + 33.5;
+  group.add(lanternRoom);
+
+  // Lamp Core
+  const lampCoreGeo = new THREE.SphereGeometry(1.8, 12, 12);
+  const lampCoreMat = new THREE.MeshBasicMaterial({ color: 0xffea85 });
+  const lampCore = new THREE.Mesh(lampCoreGeo, lampCoreMat);
+  lampCore.position.y = 12 + 33.5;
+  group.add(lampCore);
+
+  const light = new THREE.PointLight(0xffb84d, 80, 200, 1.4);
+  light.position.y = 12 + 33.5;
+  group.add(light);
+
+  // 5. Copper Cupola Roof + Spire
+  const roofGeo = new THREE.ConeGeometry(4.8, 3.8, 16);
+  const roofMat = new THREE.MeshStandardMaterial({ color: 0x2a524a, roughness: 0.6, metalness: 0.3 });
+  const roof = new THREE.Mesh(roofGeo, roofMat);
+  roof.position.y = 12 + 38;
+  group.add(roof);
+
+  const spireGeo = new THREE.CylinderGeometry(0.12, 0.25, 4.5, 8);
+  const spireMat = new THREE.MeshStandardMaterial({ color: 0xd4af37, metalness: 0.8, roughness: 0.3 });
+  const spire = new THREE.Mesh(spireGeo, spireMat);
+  spire.position.y = 12 + 41.5;
+  group.add(spire);
+
+  // 6. Sweeping Volumetric Light Beam
+  const beamPivot = new THREE.Group();
+  beamPivot.position.y = 12 + 33.5;
+
+  const beamOuterGeo = new THREE.ConeGeometry(42, 180, 20, 1, true);
+  beamOuterGeo.translate(0, -90, 0);
+  beamOuterGeo.rotateX(Math.PI / 2);
+  const beamOuterMat = new THREE.MeshBasicMaterial({
+    color: 0xffe28a,
+    transparent: true,
+    opacity: 0.26,
+    blending: THREE.AdditiveBlending,
+    side: THREE.DoubleSide,
+    depthWrite: false,
+  });
+  const beamOuter = new THREE.Mesh(beamOuterGeo, beamOuterMat);
+  beamPivot.add(beamOuter);
+
+  const beamInnerGeo = new THREE.ConeGeometry(16, 180, 16, 1, true);
+  beamInnerGeo.translate(0, -90, 0);
+  beamInnerGeo.rotateX(Math.PI / 2);
+  const beamInnerMat = new THREE.MeshBasicMaterial({
+    color: 0xfff3b0,
+    transparent: true,
+    opacity: 0.45,
+    blending: THREE.AdditiveBlending,
+    side: THREE.DoubleSide,
+    depthWrite: false,
+  });
+  const beamInner = new THREE.Mesh(beamInnerGeo, beamInnerMat);
+  beamPivot.add(beamInner);
+
+  group.add(beamPivot);
+
+  return { group, beamPivot, light };
+}
+
+export function makeShipwreckGroup(): THREE.Group {
+  const group = new THREE.Group();
+  const woodMat = new THREE.MeshStandardMaterial({
+    color: 0x1f1914,
+    roughness: 0.88,
+    metalness: 0.05,
+  });
+
+  // Tilted Keel & Hull fragment
+  const hullGeo = new THREE.BoxGeometry(3.6, 2.8, 14);
+  const hull = new THREE.Mesh(hullGeo, woodMat);
+  hull.rotation.z = 0.32;
+  hull.rotation.y = 0.25;
+  group.add(hull);
+
+  // Protruding wooden rib arches
+  for (let i = -2; i <= 2; i++) {
+    const ribGeo = new THREE.TorusGeometry(3.2 + Math.abs(i) * 0.4, 0.28, 6, 12, Math.PI);
+    const rib = new THREE.Mesh(ribGeo, woodMat);
+    rib.position.set(0.6, 0.4, i * 2.8);
+    rib.rotation.z = 0.28;
+    rib.rotation.y = 0.15 * i;
+    group.add(rib);
+  }
+
+  // Broken Mast leaning back
+  const mastGeo = new THREE.CylinderGeometry(0.32, 0.48, 15, 8);
+  const mast = new THREE.Mesh(mastGeo, woodMat);
+  mast.position.set(-0.8, 6.5, -1.2);
+  mast.rotation.z = -0.42;
+  mast.rotation.x = 0.18;
+  group.add(mast);
+
+  // Cross yardarm spar
+  const sparGeo = new THREE.CylinderGeometry(0.2, 0.24, 8, 6);
+  const spar = new THREE.Mesh(sparGeo, woodMat);
+  spar.position.set(-0.2, 8.8, -1.0);
+  spar.rotation.z = 0.35;
+  spar.rotation.y = 0.45;
+  group.add(spar);
+
+  // Bioluminescent green-emerald barnacles
+  const glowLight = new THREE.PointLight(0x28f090, 8, 18, 1.6);
+  glowLight.position.set(0.5, 1.2, 0);
+  group.add(glowLight);
+
+  return group;
+}
+
+export function makeBellBuoyGroup(): { group: THREE.Group; light: THREE.PointLight } {
+  const group = new THREE.Group();
+
+  // Float cylinder (red maritime buoy)
+  const floatGeo = new THREE.CylinderGeometry(1.6, 1.3, 2.2, 10);
+  const floatMat = new THREE.MeshStandardMaterial({ color: 0x9e241c, roughness: 0.65 });
+  const floatMesh = new THREE.Mesh(floatGeo, floatMat);
+  floatMesh.position.y = 0.3;
+  group.add(floatMesh);
+
+  // Steel Tower Cage (pyramid struts)
+  const cageMat = new THREE.MeshStandardMaterial({ color: 0x1a1a1c, roughness: 0.5 });
+  for (let i = 0; i < 4; i++) {
+    const ang = (i * Math.PI) / 2;
+    const strutGeo = new THREE.CylinderGeometry(0.08, 0.08, 3.8, 6);
+    const strut = new THREE.Mesh(strutGeo, cageMat);
+    strut.position.set(Math.cos(ang) * 0.7, 2.4, Math.sin(ang) * 0.7);
+    strut.rotation.z = Math.cos(ang) * -0.22;
+    strut.rotation.x = Math.sin(ang) * 0.22;
+    group.add(strut);
+  }
+
+  // Brass Bell
+  const bellGeo = new THREE.ConeGeometry(0.55, 0.75, 10);
+  const bellMat = new THREE.MeshStandardMaterial({ color: 0xd4af37, metalness: 0.8, roughness: 0.3 });
+  const bell = new THREE.Mesh(bellGeo, bellMat);
+  bell.position.y = 2.7;
+  group.add(bell);
+
+  // Beacon Top
+  const beaconCoreGeo = new THREE.SphereGeometry(0.26, 8, 8);
+  const beaconCoreMat = new THREE.MeshBasicMaterial({ color: 0x55ffb0 });
+  const beaconCore = new THREE.Mesh(beaconCoreGeo, beaconCoreMat);
+  beaconCore.position.y = 4.3;
+  group.add(beaconCore);
+
+  const light = new THREE.PointLight(0x40ffaa, 6, 16, 1.4);
+  light.position.y = 4.3;
+  group.add(light);
+
+  return { group, light };
+}

@@ -310,6 +310,7 @@ export default function App() {
   const boltFlash = useRef<HTMLDivElement>(null);
   const lastScore = useRef(-1);
   const lastDist = useRef(-1);
+  const lastBiome = useRef("");
   const lastCombo = useRef(0);
   const popupId = useRef(0);
   const alertTimer = useRef(0);
@@ -342,9 +343,10 @@ export default function App() {
           lastScore.current = s;
           scoreEl.current.textContent = s.toLocaleString("en-US");
         }
-        if (distEl.current && h.dist !== lastDist.current) {
+        if (distEl.current && (h.dist !== lastDist.current || h.biome !== lastBiome.current)) {
           lastDist.current = h.dist;
-          distEl.current.textContent = `${h.dist.toLocaleString("en-US")} m`;
+          lastBiome.current = h.biome;
+          distEl.current.textContent = `${h.dist.toLocaleString("en-US")} m · ${h.biome}`;
         }
         if (comboEl.current) {
           const show = h.combo >= 2;
@@ -708,11 +710,16 @@ export default function App() {
                 className={`alert-banner flex items-center gap-2.5 rounded-full border px-5 py-2 font-display text-xs font-bold tracking-[0.16em] md:text-sm ${
                   alert.tone === "warn"
                     ? "border-[#ff7a5c]/60 bg-[#2a0d08]/85 text-[#ffb09a] shadow-[0_0_30px_rgba(255,90,50,0.35)]"
+                    : alert.tone === "milestone"
+                    ? "border-amber/70 bg-[#261304]/90 text-amber shadow-[0_0_35px_rgba(255,180,84,0.45)]"
                     : "border-lumen/50 bg-[#05201f]/85 text-[#9ff3e2] shadow-[0_0_30px_rgba(63,217,192,0.25)]"
                 }`}
               >
                 {alert.tone === "warn" && (
                   <span className="warn-blink">{I.warn("h-4 w-4")}</span>
+                )}
+                {alert.tone === "milestone" && (
+                  <span className="text-amber">{I.flame("h-4 w-4")}</span>
                 )}
                 {alert.text.toUpperCase()}
               </div>

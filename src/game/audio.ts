@@ -223,6 +223,34 @@ export class GameAudio {
     this.tone(174.6, { type: "triangle", peak: 0.11, attack: 0.03, decay: 0.6, delay: 0.3 });
   }
 
+  /** Deep, resonant coastal foghorn — sounds on lighthouse checkpoints. */
+  foghorn() {
+    const ctx = this.ensure();
+    if (!ctx || this.muted) return;
+    this.tone(116.54, { type: "sawtooth", peak: 0.18, attack: 0.14, decay: 2.1, glideTo: 110.0 });
+    this.tone(146.83, { type: "triangle", peak: 0.15, attack: 0.16, decay: 2.0, glideTo: 138.6 });
+    this.tone(73.42, { type: "sine", peak: 0.24, attack: 0.20, decay: 2.4, glideTo: 69.3 });
+    this.noise({ dur: 2.0, peak: 0.08, freq: 360, type: "lowpass", delay: 0.05 });
+  }
+
+  /** Haunting bell buoy chime echoing across foggy waters. */
+  bellBuoy() {
+    const ctx = this.ensure();
+    if (!ctx || this.muted) return;
+    this.tone(587.33, { type: "sine", peak: 0.13, attack: 0.005, decay: 1.8 });
+    this.tone(1174.66, { type: "triangle", peak: 0.07, attack: 0.003, decay: 1.1, delay: 0.005 });
+    this.tone(1760.0, { type: "sine", peak: 0.035, attack: 0.002, decay: 0.6, delay: 0.008 });
+  }
+
+  /** Atmospheric chime cue when crossing into a new biome. */
+  biomeCue() {
+    const ctx = this.ensure();
+    if (!ctx || this.muted) return;
+    [261.63, 392.0, 523.25, 659.25].forEach((f, i) => {
+      this.tone(f, { type: "sine", peak: 0.08, attack: 0.25 + i * 0.1, decay: 1.9, delay: i * 0.14 });
+    });
+  }
+
   /** Whirlpool proximity rumble, 0..1. */
   setRumble(v: number) {
     if (this.ctx && this.rumbleGain)
