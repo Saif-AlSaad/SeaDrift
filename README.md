@@ -1,67 +1,126 @@
-# DRIFT · Sail the Dusk Sea
+<div align="center">
 
-A quiet 3D voyage. Sail the dusk sea and gather light before the lamp goes out.
+<img src="./public/icon.png" alt="SeaDrift Moonlit Badge" width="128" height="128" style="border-radius: 24px; box-shadow: 0 0 35px rgba(255,180,84,0.35);" />
 
-🎮 **[Play Live in Browser](https://saif-alsaad.github.io/SeaDrift/)**  
-📱 **[Download Android APK (Direct)](https://github.com/Saif-AlSaad/SeaDrift/releases/latest/download/SeaDrift.apk)** · **[View Releases](https://github.com/Saif-AlSaad/SeaDrift/releases)**
+# SeaDrift · Sail the Dusk Sea
 
-Built with **React 19**, **Three.js**, **Capacitor**, **Vite**, and **Tailwind CSS**.
+**A quiet, atmospheric 3D voyage across twilight waters.**  
+*Gather luminous wisps to keep your bow lantern burning. Outlast the endless sea.*
 
----
-
-## 🌊 Android & 100% Offline Play
-
-SeaDrift is packaged as a standalone Android app with **full offline support**:
-- **Zero External Network Dependencies:** All fonts, 3D meshes, textures, procedural shaders, and audio synthesizers are self-contained inside the app.
-- **Works Without Internet:** Play anywhere, including Airplane Mode.
-- **Hardware-Accelerated WebGL 2.0:** Native performance running at 60 FPS on Android devices.
-- **Orientation & Controls:** Supports both Landscape and Portrait layouts with touch steering (Drag, Tap Buttons, or Device Gyro/Tilt).
-
-### How to Install on Android
-1. Download **[SeaDrift.apk](https://github.com/Saif-AlSaad/SeaDrift/releases/latest/download/SeaDrift.apk)** onto your Android device.
-2. Tap the downloaded file in your browser or File Manager to install.
-   *(If prompted, allow your browser or file manager to "Install unknown apps").*
-3. Launch **SeaDrift** from your home screen and enjoy sailing!
+[![Deploy to GitHub Pages](https://github.com/Saif-AlSaad/SeaDrift/actions/workflows/deploy.yml/badge.svg)](https://github.com/Saif-AlSaad/SeaDrift/actions/workflows/deploy.yml)
+[![Build Android APK](https://github.com/Saif-AlSaad/SeaDrift/actions/workflows/build-apk.yml/badge.svg)](https://github.com/Saif-AlSaad/SeaDrift/actions/workflows/build-apk.yml)
+[![Platform](https://img.shields.io/badge/Platform-Web%20%7C%20Android%20APK-00b4d8.svg)](#-android--100-offline-play)
+[![Tech Stack](https://img.shields.io/badge/Three.js-WebGL%202.0-ff9e00.svg)](#-technology-stack)
+[![React](https://img.shields.io/badge/React-19-61dafb.svg)](https://react.dev/)
 
 ---
 
-## 🎨 Visuals & Graphics Upgrade
+### 🎮 [Play Online in Browser](https://saif-alsaad.github.io/SeaDrift/) &nbsp;·&nbsp; 📱 [Download Android APK](https://github.com/Saif-AlSaad/SeaDrift/releases/latest/download/SeaDrift.apk) &nbsp;·&nbsp; 📦 [GitHub Releases](https://github.com/Saif-AlSaad/SeaDrift/releases)
 
-- **Multi-Directional Gerstner Waves:** Realistic ocean swell with sharp wave peaks and rolling troughs.
-- **Wave Subsurface Scattering (SSS):** Golden dusk sunlight naturally penetrates wave crests with translucent emerald/teal rim lighting.
-- **Bioluminescent Ocean Wake:** Living plankton sparkle in the boat's wake with electric turquoise illumination.
-- **Dynamic Dusk & Starry Sky:** Venus belt twilight gradient opposite sunset, atmospheric corona, and procedural twinkling stars.
-- **Physics-Damped Lantern:** Bow lantern sways dynamically with boat banking and wave impacts, casting live point-light reflections.
-- **HDR Bloom & Film Tone Mapping:** ACES Filmic tone mapping and bloom post-processing optimized for mobile and desktop GPUs.
+---
+
+<img src="./screenshots/homescreen.png" alt="SeaDrift Game Homescreen" width="100%" style="border-radius: 12px; box-shadow: 0 8px 30px rgba(0,0,0,0.6);" />
+
+</div>
+
+<br/>
+
+## 🌟 Overview
+
+**SeaDrift** is an endless 3D nautical voyage game built with **Three.js (WebGL 2.0)**, **React 19**, and **Tailwind CSS**. Guided by a single swinging lantern, players navigate across procedural dusk waters, gathering glowing spirits while evading sea obstacles, rogue crests, and rocky hazards.
+
+Whether enjoyed as a meditative drift or an intense reflex challenge, SeaDrift delivers rich graphics, realistic fluid dynamics, dynamic lighting, and immersive spatial audio.
+
+---
+
+## 🌊 Key Features
+
+- **Multi-Directional Gerstner Waves:** High-fidelity procedural ocean swell with sharp wave peaks, realistic crest displacement, and rolling troughs.
+- **Wave Subsurface Scattering (SSS):** Golden dusk sunlight naturally penetrates translucent wave crests with emerald and amber rim lighting.
+- **Dynamic Marine Ecosystem:** Schools of hammerhead sharks, gliding manta rays, schooling tuna, and glowing bioluminescent jellyfish swim beneath the waves.
+- **Atmospheric Dusk & Starfield:** Atmospheric twilight gradient (Belt of Venus), solar corona, dynamic haze, and procedural twinkling stars.
+- **Physics-Damped Lantern:** Bow lantern sways in response to boat velocity, wave impacts, and banking angle, casting real-time point-light reflections across the water.
+- **Alpine Island Scenery:** Mountain ridges with alpine slopes, evergreen pine clusters, and sea-foam wash lines.
+- **Rebalanced Difficulty Modes:**
+  - **Calm (1.0×):** Peaceful, meditative voyage with gentle sea swells.
+  - **Standard (1.4×):** Balanced challenge with dynamic hazards and rewarding light combos.
+  - **Tempest (1.9×):** Fierce storm currents, rapid lamp burn, and testing obstacle densities.
+
+---
+
+## 📱 Android & 100% Offline Play
+
+SeaDrift is fully optimized as an installable, standalone **Android APK** powered by Capacitor:
+
+- **100% Self-Contained:** All 3D procedural shaders, meshes, audio synthesizers, and font assets are packaged inside the APK.
+- **No Internet Required:** Play completely offline anywhere, including Airplane Mode.
+- **Hardware-Accelerated WebGL 2.0:** Smooth 60 FPS performance on modern mobile GPUs with adaptive DPR scaling.
+- **Flexible Controls:** Full support for touch steering (drag or rudder buttons), keyboard/mouse on desktop, and device gyroscope/tilt.
+
+### Installing the Android APK:
+1. Download **[SeaDrift.apk](https://github.com/Saif-AlSaad/SeaDrift/releases/latest/download/SeaDrift.apk)** directly onto your Android device.
+2. Open the downloaded file in your browser or File Manager.
+3. Allow *"Install unknown apps"* if prompted, and launch **SeaDrift**!
 
 ---
 
 ## 🕹️ Controls
 
-- **Desktop:** `A`/`D` or `←`/`→` to steer · `Space` for burst · `P` to pause.
-- **Mobile Touch:** Drag steer across screen or use on-screen rudder buttons.
-- **Gyro / Tilt:** Steer by physically tilting your device (configurable in Settings).
+| Control Scheme | Action |
+| :--- | :--- |
+| **Keyboard** | `A` / `D` or `←` / `→` to Steer |
+| **Spacebar** | Quick Lantern Burst / Dash |
+| **P / Esc** | Pause / Resume Voyage |
+| **R** | Quick Restart |
+| **Touch / Mobile** | Drag across screen or tap on-screen rudder buttons |
+| **Device Tilt** | Physically tilt your phone (toggleable in Settings) |
 
 ---
 
-## 🛠️ Tech Stack & Building
+## 🛠️ Technology Stack
 
-- **Game Engine:** Three.js (WebGL 2.0)
-- **UI Framework:** React 19 + TypeScript
-- **Mobile Container:** Capacitor Android
-- **Styling:** Tailwind CSS v4
-- **Bundler:** Vite
+- **Graphics Engine:** [Three.js](https://threejs.org/) (WebGL 2.0 procedural mesh, custom shader uniforms, ACES Filmic tone mapping)
+- **UI Framework:** [React 19](https://react.dev/) + [TypeScript](https://www.typescriptlang.org/)
+- **Mobile Container:** [Capacitor](https://capacitorjs.com/) (Android native runtime)
+- **Styling:** [Tailwind CSS v4](https://tailwindcss.com/)
+- **Bundler & Build Tool:** [Vite](https://vitejs.dev/) + `vite-plugin-singlefile`
+- **Audio:** Web Audio API procedural synthesizer (ambient wind, gentle wave splashes, lamp chime)
 
-### Local Development
+---
+
+## 💻 Local Development
+
+Clone the repository and run the local development server:
+
 ```bash
+# Clone the repository
+git clone https://github.com/Saif-AlSaad/SeaDrift.git
+cd SeaDrift
+
+# Install dependencies
 npm install
-npm run dev               # Run web dev server
-npm run build             # Build production bundle
-npm run android:sync      # Sync web build into Android project
+
+# Start development server
+npm run dev
+
+# Build production bundle
+npm run build
+
+# Synchronize assets with Android Capacitor project
+npm run android:sync
 ```
 
-- **Framework:** React 19
-- **3D Graphics:** Three.js
-- **Styling:** Tailwind CSS v4
-- **Bundler:** Vite
-- **Language:** TypeScript
+---
+
+## 👨‍💻 Author
+
+<div align="center">
+
+### **Saif Al Saad**
+**Software Engineering**  
+**Daffodil International University**
+
+[![GitHub Profile](https://img.shields.io/badge/GitHub-Saif--AlSaad-181717?style=flat&logo=github)](https://github.com/Saif-AlSaad)
+[![Repository](https://img.shields.io/badge/Repository-SeaDrift-0077b6?style=flat&logo=git)](https://github.com/Saif-AlSaad/SeaDrift)
+
+</div>
