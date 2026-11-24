@@ -116,6 +116,37 @@ const I = {
       <path d="M17.52 14.34c-.55 0-1-.45-1-1s.45-1 1-1 1 .45 1 1-.45 1-1 1m-11.04 0c-.55 0-1-.45-1-1s.45-1 1-1 1 .45 1 1-.45 1-1 1m11.4-6.02l2-3.46a.42.42 0 00-.15-.57.42.42 0 00-.57.15l-2.02 3.5A11.7 11.7 0 0012 8.08c-1.85 0-3.59.33-5.14.87L4.84 5.45a.42.42 0 00-.57-.15.42.42 0 00-.15.57l2 3.46C2.69 11.19.34 14.66 0 18.76h24c-.34-4.1-2.69-7.57-6.12-9.44" />
     </svg>
   ),
+  flag: (c = "") => (
+    <svg viewBox="0 0 24 24" className={c} fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z" />
+      <line x1="4" y1="22" x2="4" y2="15" />
+    </svg>
+  ),
+  monitor: (c = "") => (
+    <svg viewBox="0 0 24 24" className={c} fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="2" y="3" width="20" height="14" rx="2" ry="2" />
+      <line x1="8" y1="21" x2="16" y2="21" />
+      <line x1="12" y1="17" x2="12" y2="21" />
+    </svg>
+  ),
+  sun: (c = "") => (
+    <svg viewBox="0 0 24 24" className={c} fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="12" cy="12" r="4" />
+      <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41" />
+    </svg>
+  ),
+  shake: (c = "") => (
+    <svg viewBox="0 0 24 24" className={c} fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M2 8v8M6 5v14M18 5v14M22 8v8" />
+      <rect x="9" y="4" width="6" height="16" rx="2" />
+    </svg>
+  ),
+  phone: (c = "") => (
+    <svg viewBox="0 0 24 24" className={c} fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="5" y="2" width="14" height="20" rx="3" />
+      <line x1="12" y1="18" x2="12.01" y2="18" strokeWidth="3" />
+    </svg>
+  ),
 };
 
 const IS_NATIVE = typeof window !== "undefined" && Capacitor.isNativePlatform();
@@ -125,7 +156,6 @@ const IS_TOUCH =
   typeof window !== "undefined" &&
   (window.matchMedia?.("(pointer: coarse)").matches || "ontouchstart" in window);
 const CAN_FULLSCREEN = typeof document !== "undefined" && !!document.fullscreenEnabled;
-const CAN_VIBRATE = typeof navigator !== "undefined" && typeof navigator.vibrate === "function";
 const SAFE_TL = {
   top: "max(1rem, env(safe-area-inset-top))",
   left: "max(1rem, env(safe-area-inset-left))",
@@ -134,11 +164,6 @@ const SAFE_TR = {
   top: "max(1rem, env(safe-area-inset-top))",
   right: "max(1rem, env(safe-area-inset-right))",
 } as const;
-const STEER_INFO: Record<TouchControl, string> = {
-  drag: "Slide anywhere — the boat moves with your thumb, never under it.",
-  follow: "The boat steers toward the spot you touch.",
-  tilt: "Tilt your phone left and right. Re-centres at the start of each voyage.",
-};
 
 const DIFF_INFO: Record<Difficulty, { label: string; desc: string; mult: string }> = {
   calm: {
@@ -242,38 +267,6 @@ function ScoreList({
         );
       })}
     </ol>
-  );
-}
-
-function Segmented<T extends string>({
-  options,
-  value,
-  onChange,
-}: {
-  options: Array<{ value: T; label: string }>;
-  value: T;
-  onChange: (v: T) => void;
-}) {
-  return (
-    <div className="grid auto-cols-fr grid-flow-col gap-1.5 rounded-xl border border-foam/10 bg-[#02090d]/70 p-1 shadow-inner backdrop-blur-xs">
-      {options.map((o) => {
-        const active = o.value === value;
-        return (
-          <button
-            key={o.value}
-            type="button"
-            onClick={() => onChange(o.value)}
-            className={`relative rounded-lg px-2.5 py-1.5 text-xs font-semibold tracking-wide transition-all duration-200 ${
-              active
-                ? "bg-gradient-to-b from-[#ffc875] to-[#ff9b40] text-[#1c0c03] font-bold shadow-[0_2px_10px_rgba(255,160,60,0.35)] scale-[1.02]"
-                : "text-foam/60 hover:bg-foam/[0.07] hover:text-foam active:scale-[0.98]"
-            }`}
-          >
-            {o.label}
-          </button>
-        );
-      })}
-    </div>
   );
 }
 
@@ -1040,7 +1033,7 @@ export default function App() {
       {/* ------------------------- SETTINGS MODAL ------------------------- */}
       {modal === "settings" && (
         <div
-          className="anim-modal-backdrop absolute inset-0 z-30 overflow-y-auto bg-ink/70 px-4 py-6"
+          className="anim-modal-backdrop absolute inset-0 z-30 overflow-y-auto bg-black/75 px-4 py-6 backdrop-blur-sm"
           onClick={() => {
             setModal("none");
             setConfirmClear(false);
@@ -1048,21 +1041,18 @@ export default function App() {
         >
           <div className="flex min-h-full items-center justify-center">
             <div
-              className="glass-modal anim-modal-card w-full max-w-lg p-6 sm:p-7"
+              className="anim-modal-card w-full max-w-[430px] rounded-3xl border border-[#1b2b33] bg-[#0d171d]/95 p-6 shadow-2xl sm:p-7 backdrop-blur-md"
               onClick={(e) => e.stopPropagation()}
             >
               {/* Header */}
-              <div className="flex items-center justify-between border-b border-foam/10 pb-4">
-                <div className="flex items-center gap-2.5">
-                  <div className="flex h-9 w-9 items-center justify-center rounded-xl border border-amber/30 bg-amber/10 text-amber shadow-[0_0_15px_rgba(255,180,84,0.2)]">
+              <div className="flex items-center justify-between pb-5">
+                <div className="flex items-center gap-3">
+                  <div className="flex h-9 w-9 items-center justify-center rounded-xl border border-amber/40 bg-amber/10 text-amber shadow-[0_0_12px_rgba(255,180,84,0.2)]">
                     {I.gear("h-5 w-5")}
                   </div>
-                  <div>
-                    <h2 className="font-display text-sm font-bold tracking-[0.22em] text-foam">
-                      SETTINGS
-                    </h2>
-                    <p className="text-[11px] text-foam/50 font-normal">Voyage tuning, audio & graphics</p>
-                  </div>
+                  <h2 className="text-lg font-bold tracking-tight text-white">
+                    Settings
+                  </h2>
                 </div>
                 <button
                   onClick={() => {
@@ -1070,57 +1060,102 @@ export default function App() {
                     setConfirmClear(false);
                   }}
                   aria-label="Close settings"
-                  className="icon-btn flex h-9 w-9 items-center justify-center text-foam/60 transition-transform duration-150 hover:rotate-90 hover:text-foam"
+                  className="flex h-9 w-9 items-center justify-center rounded-full border border-white/10 bg-white/5 text-foam/60 transition-all hover:bg-white/10 hover:text-white"
                 >
                   {I.close("h-4 w-4")}
                 </button>
               </div>
 
-              <div className="mt-5 space-y-4">
-                {/* 1. Difficulty Card */}
-                <div className="settings-card">
-                  <div className="mb-2.5 flex items-center justify-between">
-                    <span className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-[0.16em] text-foam/85">
-                      <span className="h-1.5 w-1.5 rounded-full bg-amber" />
-                      Difficulty
-                    </span>
-                    {state === "paused" && (
-                      <span className="rounded bg-amber/15 px-2 py-0.5 text-[10px] font-semibold text-amber">
-                        Applies live
-                      </span>
-                    )}
+              <div className="space-y-4">
+                {/* 1. Difficulty */}
+                <div>
+                  <div className="mb-2.5 flex items-center gap-2 text-sm font-bold text-white">
+                    {I.flag("h-4 w-4 text-amber")}
+                    <span>Difficulty</span>
                   </div>
-                  <Segmented<Difficulty>
-                    value={settings.difficulty}
-                    onChange={(difficulty) => updateSettings({ difficulty })}
-                    options={[
-                      { value: "calm", label: "Calm (1.0×)" },
-                      { value: "standard", label: "Standard (1.4×)" },
-                      { value: "tempest", label: "Tempest (1.9×)" },
-                    ]}
-                  />
-                  <div className="mt-2.5 rounded-lg border border-amber/20 bg-amber/[0.06] p-2.5 text-xs leading-relaxed text-amber/90">
-                    {DIFF_INFO[settings.difficulty].desc}
+                  <div className="grid grid-cols-3 gap-3">
+                    {[
+                      {
+                        id: "calm" as Difficulty,
+                        label: "Calm",
+                        wave: (
+                          <path
+                            d="M 4 12 C 16 7, 24 15, 38 10 C 48 7, 52 12, 56 12"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="2.2"
+                            strokeLinecap="round"
+                          />
+                        ),
+                      },
+                      {
+                        id: "standard" as Difficulty,
+                        label: "Standard",
+                        wave: (
+                          <path
+                            d="M 4 12 C 10 5, 15 5, 21 12 C 27 19, 32 19, 38 12 C 44 5, 49 5, 56 12"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="2.2"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                          />
+                        ),
+                      },
+                      {
+                        id: "tempest" as Difficulty,
+                        label: "Tempest",
+                        wave: (
+                          <path
+                            d="M 4 13 C 8 13, 11 5, 15 5 C 19 16, 22 16, 26 8 C 30 1, 33 18, 38 18 C 42 4, 46 14, 50 14 C 53 14, 54 8, 56 12"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="2.2"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                          />
+                        ),
+                      },
+                    ].map((d) => {
+                      const active = settings.difficulty === d.id;
+                      return (
+                        <button
+                          key={d.id}
+                          type="button"
+                          onClick={() => updateSettings({ difficulty: d.id })}
+                          className={`group relative flex flex-col items-center justify-center rounded-2xl py-4 px-2 transition-all duration-200 ${
+                            active
+                              ? "border border-amber/80 bg-[#122026] text-amber shadow-[0_0_16px_rgba(255,180,84,0.18)]"
+                              : "border border-[#1b2b33] bg-[#0c161c] text-foam/60 hover:border-foam/25 hover:text-foam"
+                          }`}
+                        >
+                          <svg viewBox="0 0 60 22" className="h-5 w-12 stroke-current mb-2.5">
+                            {d.wave}
+                          </svg>
+                          <span
+                            className={`text-sm tracking-wide ${
+                              active ? "font-bold text-amber" : "font-semibold text-foam/80"
+                            }`}
+                          >
+                            {d.label}
+                          </span>
+                        </button>
+                      );
+                    })}
                   </div>
                 </div>
 
-                {/* 2. Audio Card */}
-                <div className="settings-card">
-                  <div className="mb-2.5 flex items-center justify-between">
-                    <span className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-[0.16em] text-foam/85">
-                      <span className="h-1.5 w-1.5 rounded-full bg-lumen" />
-                      Sound & Audio
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => updateSettings({ muted: !settings.muted })}
-                      className="inline-flex items-center gap-1.5 rounded-lg border border-foam/15 bg-foam/[0.04] px-2.5 py-1 text-xs font-semibold text-foam/85 transition-colors hover:border-amber/40 hover:bg-amber/10 hover:text-amber"
-                    >
-                      {settings.muted ? I.soundOff("h-3.5 w-3.5 text-ember") : I.soundOn("h-3.5 w-3.5 text-lumen")}
-                      <span>{settings.muted ? "Muted" : `${Math.round(settings.volume * 100)}%`}</span>
-                    </button>
-                  </div>
-                  <div className="flex items-center gap-3">
+                {/* 2. Audio Volume Slider */}
+                <div className="flex items-center gap-3.5 py-1">
+                  <button
+                    type="button"
+                    onClick={() => updateSettings({ muted: !settings.muted })}
+                    aria-label={settings.muted ? "Unmute" : "Mute"}
+                    className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-teal-500/30 bg-teal-950/30 text-teal-300 transition-colors hover:border-teal-400 hover:text-teal-200"
+                  >
+                    {settings.muted ? I.soundOff("h-4 w-4 text-ember") : I.soundOn("h-4 w-4 text-teal-300")}
+                  </button>
+                  <div className="relative flex flex-1 items-center">
                     <input
                       type="range"
                       min={0}
@@ -1131,140 +1166,153 @@ export default function App() {
                         updateSettings({ volume: v, muted: v === 0 });
                       }}
                       className="custom-slider w-full"
+                      style={{
+                        background: `linear-gradient(to right, #f5a75b ${settings.muted ? 0 : Math.round(settings.volume * 100)}%, rgba(255,255,255,0.08) ${settings.muted ? 0 : Math.round(settings.volume * 100)}%)`,
+                      }}
                     />
                   </div>
+                  <span className="w-10 text-right text-sm font-bold text-white shrink-0">
+                    {settings.muted ? "0%" : `${Math.round(settings.volume * 100)}%`}
+                  </span>
                 </div>
 
-                {/* 3. Graphics Quality Card */}
-                <div className="settings-card">
-                  <div className="mb-2.5 text-xs font-bold uppercase tracking-[0.16em] text-foam/85">
-                    Graphics Quality
+                {/* 3. Graphics Quality */}
+                <div>
+                  <div className="mb-2.5 flex items-center gap-2 text-sm font-bold text-white">
+                    {I.monitor("h-4 w-4 text-amber/80")}
+                    <span>Graphics</span>
                   </div>
-                  <Segmented<QualitySetting>
-                    value={settings.quality}
-                    onChange={(quality) => updateSettings({ quality })}
-                    options={[
-                      { value: "auto", label: "Auto" },
-                      { value: "high", label: "High" },
-                      { value: "medium", label: "Medium" },
-                      { value: "low", label: "Low" },
-                    ]}
-                  />
-                  <div className="mt-3.5 grid grid-cols-2 gap-3 border-t border-foam/10 pt-3">
-                    <div>
-                      <div className="mb-1.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-foam/70">
-                        Sun Glare
-                      </div>
-                      <Segmented<"soft" | "minimal">
-                        value={settings.sunGlare}
-                        onChange={(sunGlare) => updateSettings({ sunGlare })}
-                        options={[
-                          { value: "soft", label: "Soft" },
-                          { value: "minimal", label: "Minimal" },
-                        ]}
-                      />
-                    </div>
-                    <div>
-                      <div className="mb-1.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-foam/70">
-                        Screen Shake
-                      </div>
-                      <Segmented<"on" | "off">
-                        value={settings.screenShake ? "on" : "off"}
-                        onChange={(v) => updateSettings({ screenShake: v === "on" })}
-                        options={[
-                          { value: "on", label: "On" },
-                          { value: "off", label: "Off" },
-                        ]}
-                      />
-                    </div>
+                  <div className="grid grid-cols-4 gap-1 rounded-xl border border-[#1b2b33] bg-[#0c161c] p-1">
+                    {(["auto", "high", "medium", "low"] as QualitySetting[]).map((q) => {
+                      const active = settings.quality === q;
+                      const label = q.charAt(0).toUpperCase() + q.slice(1);
+                      return (
+                        <button
+                          key={q}
+                          type="button"
+                          onClick={() => updateSettings({ quality: q })}
+                          className={`rounded-lg py-2 text-xs transition-all duration-150 ${
+                            active
+                              ? "bg-[#f5a75b] font-bold text-[#121c22] shadow-[0_0_12px_rgba(245,167,91,0.35)]"
+                              : "font-medium text-foam/60 hover:text-foam"
+                          }`}
+                        >
+                          {label}
+                        </button>
+                      );
+                    })}
                   </div>
                 </div>
 
-                {/* 4. Touch Controls (if touch available) */}
+                {/* 4. Sun Glare */}
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2 text-sm font-semibold text-white">
+                    {I.sun("h-4 w-4 text-foam/65")}
+                    <span>Sun glare</span>
+                  </div>
+                  <div className="flex rounded-xl border border-[#1b2b33] bg-[#0c161c] p-1">
+                    {(["soft", "minimal"] as const).map((v) => {
+                      const active = settings.sunGlare === v;
+                      const label = v.charAt(0).toUpperCase() + v.slice(1);
+                      return (
+                        <button
+                          key={v}
+                          type="button"
+                          onClick={() => updateSettings({ sunGlare: v })}
+                          className={`rounded-lg px-4 py-1.5 text-xs transition-all duration-150 ${
+                            active
+                              ? "bg-[#f5a75b] font-bold text-[#121c22] shadow-[0_0_12px_rgba(245,167,91,0.35)]"
+                              : "font-medium text-foam/60 hover:text-foam"
+                          }`}
+                        >
+                          {label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* 5. Screen Shake */}
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2 text-sm font-semibold text-white">
+                    {I.shake("h-4 w-4 text-foam/65")}
+                    <span>Screen shake</span>
+                  </div>
+                  <div className="flex rounded-xl border border-[#1b2b33] bg-[#0c161c] p-1">
+                    {(["on", "off"] as const).map((v) => {
+                      const active = (settings.screenShake ? "on" : "off") === v;
+                      const label = v.charAt(0).toUpperCase() + v.slice(1);
+                      return (
+                        <button
+                          key={v}
+                          type="button"
+                          onClick={() => updateSettings({ screenShake: v === "on" })}
+                          className={`rounded-lg px-4 py-1.5 text-xs transition-all duration-150 ${
+                            active
+                              ? "bg-[#f5a75b] font-bold text-[#121c22] shadow-[0_0_12px_rgba(245,167,91,0.35)]"
+                              : "font-medium text-foam/60 hover:text-foam"
+                          }`}
+                        >
+                          {label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Touch steering if on touch devices */}
                 {IS_TOUCH && (
-                  <div className="settings-card">
-                    <div className="mb-2.5 text-xs font-bold uppercase tracking-[0.16em] text-foam/85">
-                      Touch Steering
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2 text-sm font-semibold text-white">
+                      <span>Touch steering</span>
                     </div>
-                    <Segmented<TouchControl>
-                      value={settings.touchControl}
-                      onChange={(m) => void chooseSteering(m)}
-                      options={[
-                        { value: "drag", label: "Slide" },
-                        { value: "follow", label: "Follow" },
-                        { value: "tilt", label: "Tilt" },
-                      ]}
-                    />
-                    <p className="mt-2 text-xs leading-relaxed text-foam/50">{STEER_INFO[settings.touchControl]}</p>
-                    {(CAN_VIBRATE || CAN_FULLSCREEN) && (
-                      <div className="mt-3.5 grid grid-cols-2 gap-3 border-t border-foam/10 pt-3">
-                        {CAN_VIBRATE && (
-                          <div>
-                            <div className="mb-1.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-foam/70">
-                              Haptics
-                            </div>
-                            <Segmented<"on" | "off">
-                              value={settings.haptics ? "on" : "off"}
-                              onChange={(v) => updateSettings({ haptics: v === "on" })}
-                              options={[
-                                { value: "on", label: "On" },
-                                { value: "off", label: "Off" },
-                              ]}
-                            />
-                          </div>
-                        )}
-                        {CAN_FULLSCREEN && (
-                          <div>
-                            <div className="mb-1.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-foam/70">
-                              Auto Fullscreen
-                            </div>
-                            <Segmented<"on" | "off">
-                              value={settings.autoFullscreen ? "on" : "off"}
-                              onChange={(v) => updateSettings({ autoFullscreen: v === "on" })}
-                              options={[
-                                { value: "on", label: "On" },
-                                { value: "off", label: "Off" },
-                              ]}
-                            />
-                          </div>
-                        )}
-                      </div>
-                    )}
+                    <div className="flex rounded-xl border border-[#1b2b33] bg-[#0c161c] p-1">
+                      {([
+                        { id: "drag" as TouchControl, label: "Slide" },
+                        { id: "follow" as TouchControl, label: "Follow" },
+                        { id: "tilt" as TouchControl, label: "Tilt" },
+                      ]).map((t) => {
+                        const active = settings.touchControl === t.id;
+                        return (
+                          <button
+                            key={t.id}
+                            type="button"
+                            onClick={() => void chooseSteering(t.id)}
+                            className={`rounded-lg px-3 py-1.5 text-xs transition-all duration-150 ${
+                              active
+                                ? "bg-[#f5a75b] font-bold text-[#121c22] shadow-[0_0_12px_rgba(245,167,91,0.35)]"
+                                : "font-medium text-foam/60 hover:text-foam"
+                            }`}
+                          >
+                            {t.label}
+                          </button>
+                        );
+                      })}
+                    </div>
                   </div>
                 )}
 
-                {/* 5. Android APK Card */}
+                {/* 6. Android App Download */}
                 {!IS_NATIVE && (
-                  <div className="rounded-xl border border-emerald-500/25 bg-emerald-950/30 p-3.5 transition-all hover:border-emerald-500/40 hover:bg-emerald-950/45">
-                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                      <div className="min-w-0 pr-1">
-                        <div className="flex items-center gap-2">
-                          <span className="text-xs font-bold uppercase tracking-[0.16em] text-foam">
-                            Android Native App
-                          </span>
-                          <span className="rounded bg-emerald-500/20 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-emerald-300">
-                            100% Offline
-                          </span>
-                        </div>
-                        <p className="mt-1 text-xs leading-relaxed text-foam/60">
-                          Install the direct standalone APK for native 60 FPS performance without internet.
-                        </p>
-                      </div>
-                      <a
-                        href={APK_DOWNLOAD_URL}
-                        download="SeaDrift.apk"
-                        className="inline-flex shrink-0 items-center justify-center gap-1.5 rounded-lg border border-emerald-500/40 bg-emerald-950/70 px-4 py-2 text-xs font-bold uppercase tracking-wider text-emerald-300 transition-all hover:scale-[1.02] hover:border-emerald-400 hover:bg-emerald-900/80 active:scale-[0.98]"
-                      >
-                        {I.download("h-3.5 w-3.5 text-emerald-400")}
-                        Download APK
-                      </a>
+                  <div className="flex items-center justify-between rounded-2xl border border-teal-500/30 bg-[#0c1c1f]/80 px-4 py-3.5">
+                    <div className="flex items-center gap-2.5 text-sm font-bold text-white">
+                      {I.phone("h-4 w-4 text-teal-400")}
+                      <span>Android app</span>
                     </div>
+                    <a
+                      href={APK_DOWNLOAD_URL}
+                      download="SeaDrift.apk"
+                      className="flex items-center gap-1.5 rounded-xl border border-teal-500/40 bg-teal-950/60 px-3.5 py-1.5 text-xs font-bold text-teal-300 transition-all hover:border-teal-400 hover:bg-teal-900/60 active:scale-[0.98]"
+                    >
+                      {I.download("h-3.5 w-3.5 text-teal-300")}
+                      <span>Get APK</span>
+                    </a>
                   </div>
                 )}
 
-                {/* 6. Clear local scores */}
+                {/* 7. Clear High Scores */}
                 {scores.length > 0 && (
-                  <div className="pt-2">
+                  <div className="pt-1">
                     <button
                       type="button"
                       onClick={() => {
@@ -1275,13 +1323,13 @@ export default function App() {
                         setScores(clearScores());
                         setConfirmClear(false);
                       }}
-                      className={`w-full rounded-xl border py-2.5 text-xs font-semibold tracking-wide transition-all ${
+                      className={`w-full rounded-xl border py-2.5 text-xs font-medium transition-colors ${
                         confirmClear
-                          ? "border-[#ff7a5c]/80 bg-[#ff7a5c]/20 text-[#ffb5a0] shadow-[0_0_16px_rgba(255,90,50,0.3)]"
-                          : "border-foam/12 text-foam/50 hover:border-foam/25 hover:bg-foam/[0.04] hover:text-foam/80"
+                          ? "border-[#ff7a5c]/80 bg-[#ff7a5c]/20 text-[#ffb5a0] shadow-[0_0_14px_rgba(255,90,50,0.3)]"
+                          : "border-[#1b2b33] text-foam/60 hover:border-foam/25 hover:text-foam"
                       }`}
                     >
-                      {confirmClear ? "Tap again to confirm clearing high scores" : "Clear High Scores"}
+                      {confirmClear ? "Tap again to confirm clearing high scores" : "Clear high scores"}
                     </button>
                   </div>
                 )}
@@ -1293,7 +1341,7 @@ export default function App() {
                   setModal("none");
                   setConfirmClear(false);
                 }}
-                className="btn-primary mt-6 w-full py-3.5 text-xs font-bold uppercase tracking-[0.22em]"
+                className="mt-5 w-full rounded-2xl bg-[#f5a75b] py-3.5 text-sm font-bold text-[#121c22] shadow-[0_0_20px_rgba(245,167,91,0.35)] transition-all hover:brightness-105 active:scale-[0.99]"
               >
                 Done
               </button>
