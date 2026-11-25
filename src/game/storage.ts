@@ -2,6 +2,9 @@ export type Difficulty = "calm" | "standard" | "tempest";
 export type QualitySetting = "auto" | "high" | "medium" | "low";
 export type SunGlareSetting = "soft" | "minimal";
 export type TouchControl = "drag" | "follow" | "tilt";
+export type EnvironmentMode = "sea" | "mangrove";
+
+export const MANGROVE_UNLOCK_COST = 150;
 
 export interface GameSettings {
   volume: number; // 0..1
@@ -13,6 +16,7 @@ export interface GameSettings {
   touchControl: TouchControl;
   haptics: boolean;
   autoFullscreen: boolean;
+  environment: EnvironmentMode;
 }
 
 export interface ScoreEntry {
@@ -21,12 +25,15 @@ export interface ScoreEntry {
   d: number; // distance (m)
   c: number; // best combo
   m?: Difficulty; // difficulty mode
+  env?: EnvironmentMode; // environment mode
   t: number; // timestamp
 }
 
 const SCORES_KEY = "drift.scores.v3";
 const SETTINGS_KEY = "drift.settings.v1";
 const LEGACY_MUTE_KEY = "drift.muted.v1";
+const LIGHTS_KEY = "drift.lights.v1";
+const UNLOCKED_KEY = "drift.unlocked.v1";
 const MAX_ENTRIES = 8;
 
 export const DEFAULT_SETTINGS: GameSettings = {
@@ -39,6 +46,7 @@ export const DEFAULT_SETTINGS: GameSettings = {
   touchControl: "drag",
   haptics: true,
   autoFullscreen: true,
+  environment: "sea",
 };
 
 export function loadSettings(): GameSettings {
@@ -89,6 +97,10 @@ export function loadSettings(): GameSettings {
         typeof parsed.autoFullscreen === "boolean"
           ? parsed.autoFullscreen
           : DEFAULT_SETTINGS.autoFullscreen,
+      environment:
+        parsed.environment === "mangrove" && loadUnlockedModes().includes("mangrove")
+          ? "mangrove"
+          : "sea",
     };
   } catch {
     return { ...DEFAULT_SETTINGS };
@@ -102,6 +114,71 @@ export function saveSettings(s: GameSettings) {
   } catch {
     /* ignore */
   }
+}
+
+/** Load the player's banked Lights (wisps collected across voyages). */
+export function loadLights(): number {
+  try {
+    const raw = localStorage.getItem(LIGHTS_KEY);
+    if (!raw) return 0;
+    const n = parseInt(raw, 10);
+    return Number.isFinite(n) && n > 0 ? n : 0;
+  } catch {
+    return 0;
+  }
+}
+
+/** Bank newly collected Lights and return the updated wallet total. */
+export function addLights(amount: number): number {
+  const delta = Number.isFinite(amount) ? Math.max(0, Math.floor(amount)) : 0;
+  const next = loadLights() + delta;
+  try {
+    localStorage.setItem(LIGHTS_KEY, String(next));
+  } catch {
+    /* ignore */
+  }
+  return next;
+}
+
+/** Load unlocked environment modes ("sea" is always available as base mode). */
+export function loadUnlockedModes(): EnvironmentMode[] {
+  const base: EnvironmentMode[] = ["sea"];
+  try {
+    const raw = localStorage.getItem(UNLOCKED_KEY);
+    if (!raw) return base;
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed) && parsed.includes("mangrove")) {
+      return ["sea", "mangrove"];
+    }
+    return base;
+  } catch {
+    return base;
+  }
+}
+
+/** Spend banked Lights to permanently unlock Enchanted Mangrove mode. */
+export function unlockMangroveWithLights(cost = MANGROVE_UNLOCK_COST): {
+  ok: boolean;
+  balance: number;
+  unlocked: EnvironmentMode[];
+} {
+  const currentUnlocked = loadUnlockedModes();
+  const currentBalance = loadLights();
+  if (currentUnlocked.includes("mangrove")) {
+    return { ok: true, balance: currentBalance, unlocked: currentUnlocked };
+  }
+  if (currentBalance < cost) {
+    return { ok: false, balance: currentBalance, unlocked: currentUnlocked };
+  }
+  const nextBalance = currentBalance - cost;
+  const nextUnlocked: EnvironmentMode[] = ["sea", "mangrove"];
+  try {
+    localStorage.setItem(LIGHTS_KEY, String(nextBalance));
+    localStorage.setItem(UNLOCKED_KEY, JSON.stringify(nextUnlocked));
+  } catch {
+    /* ignore */
+  }
+  return { ok: true, balance: nextBalance, unlocked: nextUnlocked };
 }
 
 export function loadScores(): ScoreEntry[] {

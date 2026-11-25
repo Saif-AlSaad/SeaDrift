@@ -4,13 +4,19 @@ import { COMBO_WINDOW, GameEngine } from "./game/engine";
 import type { AlertData, GameState, PopupData, RunStats } from "./game/engine";
 import { GameAudio } from "./game/audio";
 import {
+  MANGROVE_UNLOCK_COST,
+  addLights,
   addScore,
   clearScores,
   formatDate,
+  loadLights,
   loadScores,
   loadSettings,
+  loadUnlockedModes,
   saveSettings,
+  unlockMangroveWithLights,
   type Difficulty,
+  type EnvironmentMode,
   type GameSettings,
   type QualitySetting,
   type ScoreEntry,
@@ -147,6 +153,18 @@ const I = {
       <line x1="12" y1="18" x2="12.01" y2="18" strokeWidth="3" />
     </svg>
   ),
+  lock: (c = "") => (
+    <svg viewBox="0 0 24 24" className={c} fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="4" y="11" width="16" height="10" rx="2" />
+      <path d="M8 11V7a4 4 0 018 0v4" />
+    </svg>
+  ),
+  leaf: (c = "") => (
+    <svg viewBox="0 0 24 24" className={c} fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M11 20A7 7 0 0 1 9.8 6.1C15.5 5 17 4.48 19 2c1 2 2 4.18 2 8 0 5.5-4.78 10-10 10Z" />
+      <path d="M2 21c0-3 1.85-5.36 5.08-6C9.5 14.52 12 13 13 12" />
+    </svg>
+  ),
 };
 
 const IS_NATIVE = typeof window !== "undefined" && Capacitor.isNativePlatform();
@@ -257,6 +275,11 @@ function ScoreList({
                 {e.m}
               </span>
             )}
+            {e.env === "mangrove" && (
+              <span className="rounded bg-emerald-500/15 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider text-emerald-300">
+                Mangrove
+              </span>
+            )}
             <span className="ml-auto whitespace-nowrap text-[11px] text-foam/45">
               {e.d}m · {formatDate(e.t)}
             </span>
@@ -280,6 +303,10 @@ export default function App() {
   const [state, setState] = useState<GameState>("menu");
   const [settings, setSettings] = useState<GameSettings>(() => loadSettings());
   const [scores, setScores] = useState<ScoreEntry[]>(() => loadScores());
+  const [lights, setLights] = useState<number>(() => loadLights());
+  const [unlockedModes, setUnlockedModes] = useState<EnvironmentMode[]>(() => loadUnlockedModes());
+  const [earnedLights, setEarnedLights] = useState(0);
+  const [needLightsHint, setNeedLightsHint] = useState(false);
   const [final, setFinal] = useState<RunStats | null>(null);
   const [newBest, setNewBest] = useState(false);
   const [newRank, setNewRank] = useState(-1);
@@ -363,12 +390,16 @@ export default function App() {
         if (energyWrap.current) energyWrap.current.classList.toggle("energy-low", h.energy < 28);
       },
       onGameOver: (stats) => {
+        const nextLights = addLights(stats.wisps);
+        setLights(nextLights);
+        setEarnedLights(stats.wisps);
         const entry: ScoreEntry = {
           s: stats.score,
           w: stats.wisps,
           d: stats.dist,
           c: stats.maxCombo,
           m: stats.difficulty,
+          env: stats.environment,
           t: Date.now(),
         };
         const { list, rank, isBest } = addScore(entry);
@@ -568,6 +599,37 @@ export default function App() {
     setModal(m);
   };
 
+  const mangroveUnlocked = unlockedModes.includes("mangrove");
+  const canUnlockMangrove = lights >= MANGROVE_UNLOCK_COST;
+
+  const selectEnvironment = (env: EnvironmentMode) => {
+    blurActive();
+    if (env === "mangrove" && !mangroveUnlocked) {
+      handleUnlockMangrove();
+      return;
+    }
+    audioRef.current?.ensure();
+    audioRef.current?.click();
+    updateSettings({ environment: env });
+  };
+
+  const handleUnlockMangrove = () => {
+    blurActive();
+    const res = unlockMangroveWithLights(MANGROVE_UNLOCK_COST);
+    if (!res.ok) {
+      audioRef.current?.ensure();
+      audioRef.current?.warn();
+      setNeedLightsHint(true);
+      window.setTimeout(() => setNeedLightsHint(false), 1800);
+      return;
+    }
+    setLights(res.balance);
+    setUnlockedModes(res.unlocked);
+    audioRef.current?.ensure();
+    audioRef.current?.chime(5, true);
+    updateSettings({ environment: "mangrove" });
+  };
+
   const best = scores[0]?.s ?? 0;
   const inGame = state === "playing" || state === "paused";
 
@@ -754,6 +816,20 @@ export default function App() {
       {/* ------------------------- START (clean & airy) ------------------------- */}
       {state === "menu" && (
         <div className="absolute inset-0 overflow-y-auto">
+          {/* top-left lights wallet */}
+          <div className="absolute left-4 top-4 z-10 flex items-center gap-2 md:left-6 md:top-6" style={SAFE_TL}>
+            <div
+              title="Collect glowing wisps during voyages to unlock new environments"
+              className="flex h-11 items-center gap-2 rounded-full border border-amber/35 bg-[#05141a]/75 px-4 text-xs font-bold tracking-wide text-amber shadow-[0_4px_20px_rgba(0,0,0,0.35)] backdrop-blur-xs"
+            >
+              {I.flame("h-4 w-4 text-amber")}
+              <span>{lights.toLocaleString("en-US")}</span>
+              <span className="text-[10px] font-semibold uppercase tracking-widest text-foam/65">
+                Lights
+              </span>
+            </div>
+          </div>
+
           {/* top-right utility bar */}
           <div className="absolute right-4 top-4 z-10 flex items-center gap-2 md:right-6 md:top-6" style={SAFE_TR}>
             {CAN_FULLSCREEN && (
@@ -815,7 +891,7 @@ export default function App() {
               />
               <div className="mb-3 flex items-center justify-center gap-2 text-[10px] font-semibold tracking-[0.36em] text-foam/70">
                 {I.boat("h-4 w-4 shrink-0 text-amber")}
-                DUSK SEA VOYAGE
+                {settings.environment === "mangrove" ? "MIDNIGHT MANGROVE VOYAGE" : "DUSK SEA VOYAGE"}
                 {I.boat("h-4 w-4 shrink-0 -scale-x-100 text-amber")}
               </div>
               <h1 className="title-glow font-display text-7xl font-black tracking-tight text-foam md:text-8xl">
@@ -823,10 +899,102 @@ export default function App() {
               </h1>
               <WaveLine />
               <p className="mx-auto mt-4 max-w-sm text-[15px] leading-relaxed text-foam/80 [text-shadow:0_1px_12px_rgba(0,0,0,0.65)]">
-                Gather wisps to keep your lamp burning. Outlast the sea.
+                {settings.environment === "mangrove"
+                  ? "Navigate midnight mangrove roots. Guard your lantern light."
+                  : "Gather wisps to keep your lamp burning. Outlast the sea."}
               </p>
 
-              <div className="mt-7 flex flex-col items-center gap-3">
+              {/* Environment Mode Selector */}
+              <div className="mt-6 grid w-full max-w-md grid-cols-2 gap-2.5 px-1">
+                {/* Base Mode: Sea */}
+                <button
+                  type="button"
+                  onClick={() => selectEnvironment("sea")}
+                  className={`group flex flex-col items-start rounded-2xl border p-3.5 text-left transition-all duration-200 backdrop-blur-xs ${
+                    settings.environment === "sea"
+                      ? "border-amber/75 bg-[#081d25]/85 shadow-[0_0_20px_rgba(255,180,84,0.2)]"
+                      : "border-foam/15 bg-[#05141a]/65 hover:border-foam/30 hover:bg-[#071b23]/75"
+                  }`}
+                >
+                  <div className="flex w-full items-center justify-between">
+                    <span
+                      className={`flex items-center gap-1.5 text-xs font-bold tracking-wide ${
+                        settings.environment === "sea" ? "text-amber" : "text-foam/85"
+                      }`}
+                    >
+                      {I.boat("h-3.5 w-3.5")}
+                      Sea Voyage
+                    </span>
+                    {settings.environment === "sea" && (
+                      <span className="h-2 w-2 rounded-full bg-amber shadow-[0_0_8px_#ffb454]" />
+                    )}
+                  </div>
+                  <span className="mt-1 text-[11px] text-foam/55">Base · Dusk open sea</span>
+                </button>
+
+                {/* Unlockable Mode: Enchanted Mangrove */}
+                <button
+                  type="button"
+                  onClick={() => selectEnvironment("mangrove")}
+                  className={`group flex flex-col items-start rounded-2xl border p-3.5 text-left transition-all duration-200 backdrop-blur-xs ${
+                    !mangroveUnlocked
+                      ? canUnlockMangrove
+                        ? "border-[#43E6C1]/70 bg-[#062222]/85 shadow-[0_0_22px_rgba(67,230,193,0.2)] hover:border-[#43E6C1]"
+                        : "border-foam/12 bg-[#05141a]/65 hover:border-foam/25"
+                      : settings.environment === "mangrove"
+                        ? "border-[#43E6C1]/80 bg-[#062422]/85 shadow-[0_0_22px_rgba(67,230,193,0.24)]"
+                        : "border-foam/15 bg-[#05141a]/65 hover:border-[#43E6C1]/40"
+                  }`}
+                >
+                  <div className="flex w-full items-center justify-between">
+                    <span
+                      className={`flex items-center gap-1.5 text-xs font-bold tracking-wide ${
+                        !mangroveUnlocked
+                          ? canUnlockMangrove
+                            ? "text-[#43E6C1]"
+                            : "text-foam/70"
+                          : settings.environment === "mangrove"
+                            ? "text-[#43E6C1]"
+                            : "text-foam/85"
+                      }`}
+                    >
+                      {mangroveUnlocked ? I.leaf("h-3.5 w-3.5") : I.lock("h-3.5 w-3.5")}
+                      Mangrove
+                    </span>
+                    {mangroveUnlocked && settings.environment === "mangrove" && (
+                      <span className="h-2 w-2 rounded-full bg-[#43E6C1] shadow-[0_0_8px_#43E6C1]" />
+                    )}
+                  </div>
+
+                  {mangroveUnlocked ? (
+                    <span className="mt-1 text-[11px] text-foam/55">Midnight forest river</span>
+                  ) : (
+                    <div className="mt-1.5 w-full">
+                      <div className="flex items-center justify-between text-[10px] font-semibold">
+                        <span className={canUnlockMangrove ? "text-[#43E6C1]" : needLightsHint ? "text-ember" : "text-amber/90"}>
+                          {canUnlockMangrove
+                            ? `Unlock · ${MANGROVE_UNLOCK_COST} Lights`
+                            : needLightsHint
+                              ? `Need ${MANGROVE_UNLOCK_COST - lights} more!`
+                              : `${lights}/${MANGROVE_UNLOCK_COST} Lights`}
+                        </span>
+                      </div>
+                      <div className="mt-1 h-1 w-full overflow-hidden rounded-full bg-foam/10">
+                        <div
+                          className={`h-full rounded-full transition-all duration-300 ${
+                            canUnlockMangrove ? "bg-[#43E6C1]" : "bg-amber/80"
+                          }`}
+                          style={{
+                            width: `${Math.min(100, (lights / MANGROVE_UNLOCK_COST) * 100)}%`,
+                          }}
+                        />
+                      </div>
+                    </div>
+                  )}
+                </button>
+              </div>
+
+              <div className="mt-6 flex flex-col items-center gap-3">
                 <button
                   onClick={start}
                   className="btn-primary flex items-center gap-3 px-11 py-4 text-base font-bold tracking-[0.18em]"
@@ -930,6 +1098,8 @@ export default function App() {
             {/* Score */}
             <div className="mt-5">
               <div className="inline-flex items-center gap-1.5 rounded-full border border-foam/10 bg-foam/[0.04] px-3 py-0.5 text-[10px] font-semibold tracking-wider text-foam/60">
+                <span>{final.environment === "mangrove" ? "Mangrove" : "Sea"}</span>
+                <span className="text-foam/30">·</span>
                 <span>{DIFF_INFO[final.difficulty].label}</span>
                 <span className="text-foam/30">·</span>
                 <span className="text-amber">{DIFF_INFO[final.difficulty].mult}</span>
@@ -963,6 +1133,19 @@ export default function App() {
                   </div>
                 </div>
               ))}
+            </div>
+
+            {/* Banked Lights progress */}
+            <div className="mt-3 flex items-center justify-between rounded-xl border border-amber/20 bg-amber/[0.06] px-3.5 py-2 text-xs">
+              <span className="flex items-center gap-1.5 font-semibold text-amber">
+                {I.flame("h-3.5 w-3.5")}
+                +{earnedLights} Lights banked
+              </span>
+              <span className="font-semibold text-foam/70">
+                {!mangroveUnlocked && canUnlockMangrove
+                  ? "Mangrove ready!"
+                  : `${lights.toLocaleString("en-US")} total`}
+              </span>
             </div>
 
             {/* Actions */}

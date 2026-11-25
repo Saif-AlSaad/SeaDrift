@@ -9,7 +9,7 @@ import { UnrealBloomPass } from "three/examples/jsm/postprocessing/UnrealBloomPa
 import { OutputPass } from "three/examples/jsm/postprocessing/OutputPass.js";
 import { mergeVertices } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import type { GameAudio } from "./audio";
-import type { Difficulty, GameSettings } from "./storage";
+import type { Difficulty, EnvironmentMode, GameSettings } from "./storage";
 import {
   makeDetailedWoodTexture,
   makeDeckTexture,
@@ -46,6 +46,7 @@ export interface RunStats {
   dist: number;
   maxCombo: number;
   difficulty: Difficulty;
+  environment: EnvironmentMode;
 }
 
 export interface PopupData {
@@ -704,6 +705,7 @@ export class GameEngine {
 
   // settings & difficulty
   private difficulty: Difficulty = "standard";
+  private environment: EnvironmentMode = "sea";
   private screenShakeEnabled = true;
 
   // run state
@@ -882,6 +884,7 @@ export class GameEngine {
 
   applySettings(s: GameSettings) {
     this.difficulty = s.difficulty;
+    this.environment = s.environment ?? "sea";
     this.screenShakeEnabled = s.screenShake;
     this.touchControl = s.touchControl;
     this.haptics = s.haptics;
@@ -3438,6 +3441,7 @@ export class GameEngine {
       dist: Math.floor(-this.boat.position.z / 10),
       maxCombo: this.maxCombo,
       difficulty: this.difficulty,
+      environment: this.environment,
     });
   }
 
