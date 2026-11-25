@@ -31,13 +31,20 @@ import {
 import {
   getMangroveCorridorParams,
   makeBioPlantGeometry,
+  makeFallenTrunkGeometry,
   makeFernBushGeometry,
+  makeGatorGroup,
+  makeLilyMatGeometry,
   makeMangroveArchGeometry,
   makeMangroveArchetype,
   makeMangroveBarkTexture,
+  makeMudbankIsletGeometry,
   makeRootSnagGeometry,
+  makeSpiritTreeHavenGroup,
   makeTangledHazardGeometry,
   makeWaterLilyGeometry,
+  type RiverGatorRig,
+  type SpiritHavenRig,
 } from "./mangrove";
 
 export type GameState = "menu" | "playing" | "paused" | "gameover";
@@ -342,6 +349,9 @@ const C = {
   spray: new THREE.Color(0.52, 0.74, 0.78),
   wood: new THREE.Color(0.45, 0.26, 0.11),
   bolt: new THREE.Color(0.55, 0.72, 1.0),
+  firefly: new THREE.Color(0.79, 0.91, 0.54),
+  moss: new THREE.Color(0.18, 0.45, 0.25),
+  spore: new THREE.Color(1.0, 0.30, 0.16),
   fogCalm: new THREE.Color("#6b7c87"),
   fogStorm: new THREE.Color("#1b2226"),
 };
@@ -483,6 +493,48 @@ interface MangroveArchSlot {
   z: number;
   yaw: number;
   scale: number;
+}
+
+interface FallenTrunk {
+  mesh: THREE.Mesh;
+  side: -1 | 1;
+  xMin: number;
+  xMax: number;
+  tipX: number;
+  z: number;
+  active: boolean;
+  hit: boolean;
+  passed: boolean;
+}
+
+interface RiverGator {
+  rig: RiverGatorRig;
+  x: number;
+  z: number;
+  vx: number;
+  phase: number;
+  active: boolean;
+  hit: boolean;
+  passed: boolean;
+}
+
+interface LilyMat {
+  mesh: THREE.Mesh;
+  x: number;
+  z: number;
+  r: number;
+  active: boolean;
+  entered: boolean;
+}
+
+interface ForkIslet {
+  mesh: THREE.Mesh;
+  x: number;
+  z: number;
+  halfW: number;
+  halfL: number;
+  active: boolean;
+  passed: boolean;
 }
 
 interface AtmosphereConfig {
@@ -780,6 +832,17 @@ export class GameEngine {
   private mDummy = new THREE.Object3D();
   private mNextTreeZ = 20;
   private mNextArchZ = -10;
+  private mBankScrapeCd = 0;
+  private mSwarmBoostT = 0;
+  private mSwarmChain = 0;
+  private mLilyDrag = 0;
+  private mLilyRustleCd = 0;
+  private fallenTrunks: FallenTrunk[] = [];
+  private gators: RiverGator[] = [];
+  private lilyMats: LilyMat[] = [];
+  private forkIslets: ForkIslet[] = [];
+  private spiritHaven!: SpiritHavenRig;
+  private lastSpiritHavenTriggered = 0;
 
   // boat
   private boat!: THREE.Group;
@@ -903,8 +966,14 @@ export class GameEngine {
   private waveTimer = 21;
   private whirlTimer = 28;
   private jellyTimer = 14;
+  private mTrunkTimer = 10;
+  private mGatorTimer = 15;
+  private mLilyMatTimer = 6;
+  private mForkTimer = 24;
   private waveAlertShown = false;
   private mineAlertShown = false;
+  private gatorAlertShown = false;
+  private forkAlertShown = false;
   private sprayTimer = 0;
   private overTimer = 0;
 
@@ -1072,6 +1141,7 @@ export class GameEngine {
       this.hemi.color.set("#5c8f99");
       this.hemi.groundColor.set("#051a19");
       if (this.lighthouse) this.lighthouse.visible = false;
+      if (this.spiritHaven) this.spiritHaven.group.visible = false;
     } else {
       this.sun.position.copy(sunDir()).multiplyScalar(200);
       this.sun.color.set("#f6aa68");
@@ -1165,16 +1235,29 @@ export class GameEngine {
     this.waveTimer = tune.waveUnlock;
     this.whirlTimer = tune.whirlUnlock;
     this.jellyTimer = 15 + Math.random() * 6;
+    this.mTrunkTimer = 10;
+    this.mGatorTimer = 16;
+    this.mLilyMatTimer = 6.5;
+    this.mForkTimer = 25;
+    this.mLilyDrag = 0;
+    this.mLilyRustleCd = 0;
     this.waveAlertShown = false;
     this.mineAlertShown = false;
+    this.gatorAlertShown = false;
+    this.forkAlertShown = false;
     this.stormOn = false;
     this.stormTimer = tune.stormStart;
     this.pushVx = 0;
     this.coreAmt = 0;
+    this.mBankScrapeCd = 0;
+    this.mSwarmBoostT = 0;
+    this.mSwarmChain = 0;
     this.lastLighthouseTriggered = 0;
+    this.lastSpiritHavenTriggered = 0;
     this.shipwreckTimer = 14;
     this.buoyTimer = 18;
     if (this.lighthouse) this.lighthouse.visible = false;
+    if (this.spiritHaven) this.spiritHaven.group.visible = false;
     for (const s of this.shipwrecks) {
       s.active = false;
       s.group.visible = false;
@@ -3260,6 +3343,63 @@ export class GameEngine {
     this.fireflies.frustumCulled = false;
     this.mangroveGroup.add(this.fireflies);
 
+    // Mangrove-exclusive Part 2 obstacles & Part 3 progression landmarks (inside mangroveGroup)
+    const trunkMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.78, metalness: 0.04 });
+    const trunkGeos = [makeFallenTrunkGeometry(31.1), makeFallenTrunkGeometry(47.3)];
+    for (let i = 0; i < 4; i++) {
+      const m = new THREE.Mesh(trunkGeos[i % trunkGeos.length], trunkMat);
+      m.visible = false;
+      this.mangroveGroup.add(m);
+      this.fallenTrunks.push({
+        mesh: m,
+        side: -1,
+        xMin: 0,
+        xMax: 0,
+        tipX: 0,
+        z: 0,
+        active: false,
+        hit: false,
+        passed: false,
+      });
+    }
+
+    for (let i = 0; i < 4; i++) {
+      const rig = makeGatorGroup();
+      rig.group.visible = false;
+      this.mangroveGroup.add(rig.group);
+      this.gators.push({
+        rig,
+        x: 0,
+        z: 0,
+        vx: 3.5,
+        phase: Math.random() * Math.PI * 2,
+        active: false,
+        hit: false,
+        passed: false,
+      });
+    }
+
+    const lilyMatGeo = makeLilyMatGeometry(41.7);
+    for (let i = 0; i < 5; i++) {
+      const m = new THREE.Mesh(lilyMatGeo, vegMat);
+      m.visible = false;
+      this.mangroveGroup.add(m);
+      this.lilyMats.push({ mesh: m, x: 0, z: 0, r: 3.1, active: false, entered: false });
+    }
+
+    const isletGeo = makeMudbankIsletGeometry(63.9);
+    const isletMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.84, metalness: 0.04 });
+    for (let i = 0; i < 2; i++) {
+      const m = new THREE.Mesh(isletGeo, isletMat);
+      m.visible = false;
+      this.mangroveGroup.add(m);
+      this.forkIslets.push({ mesh: m, x: 0, z: 0, halfW: 2.75, halfL: 7.4, active: false, passed: false });
+    }
+
+    this.spiritHaven = makeSpiritTreeHavenGroup(barkTex);
+    this.spiritHaven.group.visible = false;
+    this.mangroveGroup.add(this.spiritHaven.group);
+
     this.mangroveGroup.visible = this.environment === "mangrove";
     this.scene.add(this.mangroveGroup);
     this.resetMangroveCorridor(0);
@@ -3587,6 +3727,7 @@ export class GameEngine {
 
   private spawnPattern(atZ?: number) {
     const tune = DIFF_TUNING[this.difficulty];
+    const isMangrove = this.environment === "mangrove";
     const bz = this.boat.position.z;
     const base = atZ ?? bz - (96 + Math.random() * 34);
     let lane = (Math.random() * 2 - 1) * (STEER_RANGE - 2.5);
@@ -3595,6 +3736,17 @@ export class GameEngine {
       for (let i = 0; i < 3 && Math.abs(lane - this.boat.position.x) < 6; i++) {
         lane = (Math.random() * 2 - 1) * (STEER_RANGE - 2.5);
       }
+    }
+    if (isMangrove && Math.random() < 0.45) {
+      // Firefly Swarm Stream: sinuous ribbon guiding the boat between overhanging roots
+      const count = 5;
+      const dir = lane > 0 ? -1 : 1;
+      const amp = 2.8 + Math.random() * 2.4;
+      for (let i = 0; i < count; i++) {
+        const sx = clamp(lane + dir * Math.sin((i / (count - 1)) * Math.PI * 1.15) * amp, -STEER_RANGE + 1.6, STEER_RANGE - 1.6);
+        this.spawnWisp(sx, base - i * 6.8, i === count - 1);
+      }
+      return;
     }
     const span = tune.wispClusterMax - tune.wispClusterMin + 1;
     const n = tune.wispClusterMin + Math.floor(Math.random() * span);
@@ -3651,7 +3803,10 @@ export class GameEngine {
   private spawnRocks(d: number, dist?: number) {
     const bz = this.boat.position.z;
     const z = bz - (dist ?? 102 + Math.random() * 32);
-    if (d > 0.16 && Math.random() < 0.22 + d * 0.42) {
+    const hasBlocker =
+      this.fallenTrunks.some((ft) => ft.active && Math.abs(ft.z - z) < 18) ||
+      this.forkIslets.some((fk) => fk.active && Math.abs(fk.z - z) < 22);
+    if (!hasBlocker && d > 0.16 && Math.random() < 0.22 + d * 0.42) {
       // reef wall with one narrow gap and a teal reward inside
       const gap = (Math.random() * 2 - 1) * (STEER_RANGE - 5);
       for (let x = -STEER_RANGE - 1; x <= STEER_RANGE + 1; x += 4.8 + Math.random() * 1.2) {
@@ -3690,16 +3845,16 @@ export class GameEngine {
     const applyMineVisuals = (target: Mine) => {
       target.shellBody.visible = !isMangrove;
       target.tangleBody.visible = isMangrove;
-      target.beacon.color.setHex(isMangrove ? 0x43e6c1 : 0xff1a10);
+      target.beacon.color.setHex(isMangrove ? 0xff4d28 : 0xff1a10);
       target.beacon.emissive.setRGB(
-        isMangrove ? 0.26 : 1.0,
-        isMangrove ? 0.90 : 0.15,
-        isMangrove ? 0.76 : 0.08,
+        isMangrove ? 1.0 : 1.0,
+        isMangrove ? 0.28 : 0.15,
+        isMangrove ? 0.14 : 0.08,
       );
       (target.halo.material as THREE.SpriteMaterial).color.setRGB(
-        isMangrove ? 0.26 : 1.0,
-        isMangrove ? 0.90 : 0.18,
-        isMangrove ? 0.76 : 0.10,
+        isMangrove ? 1.0 : 1.0,
+        isMangrove ? 0.30 : 0.18,
+        isMangrove ? 0.14 : 0.10,
       );
     };
 
@@ -3720,7 +3875,7 @@ export class GameEngine {
       this.mineAlertShown = true;
       this.cb.onAlert({
         text: isMangrove
-          ? "Tangled root hazards — keep clear of spore pods"
+          ? "Tangled thorn roots — keep clear of crimson spores"
           : "Sea mines — keep clear of red beacons",
         tone: "warn",
       });
@@ -3828,6 +3983,100 @@ export class GameEngine {
     j.group.visible = true;
   }
 
+  private spawnFallenTrunk(d: number) {
+    const ft = this.fallenTrunks.find((q) => !q.active);
+    if (!ft) return;
+    const side: -1 | 1 = Math.random() < 0.5 ? -1 : 1;
+    const z = this.boat.position.z - (112 + Math.random() * 22);
+    if (
+      this.forkIslets.some((fk) => fk.active && Math.abs(fk.z - z) < 24) ||
+      this.fallenTrunks.some((other) => other.active && Math.abs(other.z - z) < 20)
+    ) {
+      return;
+    }
+    const bankX = side * 17.6;
+    const reach = 17.8 + d * 1.4;
+    const tipX = bankX - side * reach;
+    ft.active = true;
+    ft.hit = false;
+    ft.passed = false;
+    ft.side = side;
+    ft.z = z;
+    ft.tipX = tipX;
+    ft.xMin = Math.min(bankX, tipX);
+    ft.xMax = Math.max(bankX, tipX);
+    ft.mesh.position.set(bankX, 0, z);
+    ft.mesh.rotation.y = side === -1 ? 0 : Math.PI;
+    ft.mesh.scale.set(reach / 18.5, 1.0, 1.0);
+    ft.mesh.visible = true;
+
+    const openX = -side * (5.5 + Math.random() * 5.0);
+    this.spawnWisp(openX, z, true);
+  }
+
+  private spawnGator(d: number) {
+    const g = this.gators.find((q) => !q.active);
+    if (!g) return;
+    const side = Math.random() < 0.5 ? -1 : 1;
+    g.active = true;
+    g.hit = false;
+    g.passed = false;
+    g.x = side * (7.5 + Math.random() * 5.0);
+    g.z = this.boat.position.z - (102 + Math.random() * 26);
+    g.vx = -side * (3.5 + d * 2.2 + Math.random() * 1.0);
+    g.phase = Math.random() * Math.PI * 2;
+    g.rig.group.visible = true;
+    if (!this.gatorAlertShown) {
+      this.gatorAlertShown = true;
+      this.cb.onAlert({ text: "River gators patrolling — watch for amber eyes", tone: "warn" });
+      this.audio.warn();
+    }
+  }
+
+  private spawnLilyMat() {
+    const lm = this.lilyMats.find((q) => !q.active);
+    if (!lm) return;
+    lm.active = true;
+    lm.entered = false;
+    lm.r = 2.85 + Math.random() * 0.6;
+    lm.x = (Math.random() * 2 - 1) * (STEER_RANGE - 3.5);
+    lm.z = this.boat.position.z - (96 + Math.random() * 28);
+    lm.mesh.position.set(lm.x, 0, lm.z);
+    lm.mesh.rotation.y = Math.random() * Math.PI * 2;
+    lm.mesh.scale.setScalar(lm.r / 3.0);
+    lm.mesh.visible = true;
+  }
+
+  private spawnForkIslet() {
+    const fk = this.forkIslets.find((q) => !q.active);
+    if (!fk) return;
+    const z = this.boat.position.z - 132;
+    const distM = -z / 10;
+    const rem200 = distM % 200;
+    if (rem200 < 30 || rem200 > 170) return;
+    if (this.fallenTrunks.some((ft) => ft.active && Math.abs(ft.z - z) < 24)) return;
+
+    const cx = (Math.random() - 0.5) * 2.6;
+    fk.active = true;
+    fk.passed = false;
+    fk.x = cx;
+    fk.z = z;
+    fk.mesh.position.set(cx, 0, z);
+    fk.mesh.visible = true;
+
+    const tightSide = cx < 0 ? -1 : 1;
+    const tightX = clamp(cx + tightSide * 7.2, -STEER_RANGE + 1.5, STEER_RANGE - 1.5);
+    const wideX = clamp(cx - tightSide * 8.4, -STEER_RANGE + 1.5, STEER_RANGE - 1.5);
+    this.spawnWisp(tightX, z + 3, true);
+    this.spawnWisp(tightX, z - 4, true);
+    this.spawnWisp(wideX, z, false);
+
+    if (!this.forkAlertShown) {
+      this.forkAlertShown = true;
+      this.cb.onAlert({ text: "River splits ahead — choose your channel", tone: "calm" });
+    }
+  }
+
   private clearEntities() {
     for (const w of this.wisps) {
       w.active = false;
@@ -3880,11 +4129,29 @@ export class GameEngine {
       b.sounded = false;
     }
     if (this.lighthouse) this.lighthouse.visible = false;
+    if (this.spiritHaven) this.spiritHaven.group.visible = false;
+    for (const ft of this.fallenTrunks) {
+      ft.active = false;
+      ft.mesh.visible = false;
+    }
+    for (const g of this.gators) {
+      g.active = false;
+      g.rig.group.visible = false;
+    }
+    for (const lm of this.lilyMats) {
+      lm.active = false;
+      lm.mesh.visible = false;
+    }
+    for (const fk of this.forkIslets) {
+      fk.active = false;
+      fk.mesh.visible = false;
+    }
     const startArea = resolveAreaKey(this.environment, 0);
     this.currentBiome = startArea.key;
     this.currentBiomeName = startArea.cfg.name;
     this.lastBiomeAnnounced = startArea.key;
     this.lastLighthouseTriggered = 0;
+    this.lastSpiritHavenTriggered = 0;
     this.pCount = 0;
     this.pGeo.setDrawRange(0, 0);
   }
@@ -4032,6 +4299,18 @@ export class GameEngine {
     this.maxCombo = Math.max(this.maxCombo, this.combo);
     this.comboT = COMBO_WINDOW;
     this.energy = Math.min(100, this.energy + (w.teal ? tune.tealFuel : tune.amberFuel));
+    if (this.environment === "mangrove") {
+      this.mSwarmChain++;
+      if (this.mSwarmChain >= 2) {
+        const wasBoosted = this.mSwarmBoostT > 0.2;
+        this.mSwarmBoostT = Math.min(3.5, 1.8 + Math.min(this.mSwarmChain, 6) * 0.28);
+        this.burst(x, y, w.z, C.firefly, 14, 4.8, 0.3, 0.8, 3.2, 2.0);
+        if (!wasBoosted) {
+          this.tmpV2.set(x, y + 1.3, w.z);
+          this.popup(this.tmpV2, "FIREFLY GLIDE", "gold");
+        }
+      }
+    }
     this.audio.chime(this.combo - 2, w.teal);
     this.haptic(w.teal ? 14 : 7);
     this.addShake(0.05);
@@ -4046,6 +4325,8 @@ export class GameEngine {
     if (!this.godMode) this.energy = Math.max(0, this.energy - amount);
     this.combo = 1;
     this.comboT = 0;
+    this.mSwarmChain = 0;
+    this.mSwarmBoostT = 0;
     this.hullFlash = 1;
     this.addShake(shake);
     this.cb.onFlash("hit");
@@ -4085,13 +4366,15 @@ export class GameEngine {
     const bz = this.boat.position.z;
     const side = bx >= m.x ? 1 : -1;
     this.pushVx = side * 15;
-    this.audio.mineBoom();
+    const isMangrove = this.environment === "mangrove";
+    if (isMangrove) this.audio.crack();
+    else this.audio.mineBoom();
     const y = this.surf(m.x, m.z);
-    this.burst(m.x, y + 0.6, m.z, C.amber, 32, 10, 0.48, 1.0, 6, 1.8);
-    this.burst(m.x, y + 0.4, m.z, C.crimson, 20, 8, 0.4, 0.8, 5, 2.0);
-    this.burst(m.x, y + 0.5, m.z, C.foam, 24, 9, 0.36, 1.1, 9, 1.8);
-    this.spawnRing(m.x, m.z, 6.5, 1.4, 1.5);
-    this.spawnRing(m.x, m.z, 4.2, 1.0, 1.1);
+    this.burst(m.x, y + 0.6, m.z, isMangrove ? C.spore : C.amber, 30, 9.5, 0.44, 1.0, 6, 1.8);
+    this.burst(m.x, y + 0.4, m.z, isMangrove ? C.moss : C.crimson, 20, 8, 0.36, 0.8, 5, 2.0);
+    this.burst(m.x, y + 0.5, m.z, C.foam, 20, 8, 0.34, 1.0, 8, 1.8);
+    this.spawnRing(m.x, m.z, 6.0, 1.4, 1.5);
+    this.spawnRing(m.x, m.z, 4.0, 1.0, 1.1);
     this.damage(22, 1.15, bx, bz);
   }
 
@@ -4118,6 +4401,43 @@ export class GameEngine {
     this.burst(bx, 0.4, bz - 1.6, C.foam, 14, 5, 0.3, 0.8, 6, 2.2);
     this.spawnRing(bx, bz - 1.6, 3.6, 1.2, 1.2);
     this.damage(14, 0.7, bx, bz);
+  }
+
+  private hitFallenTrunk(ft: FallenTrunk) {
+    ft.hit = true;
+    const bx = this.boat.position.x;
+    const bz = this.boat.position.z;
+    this.pushVx = -ft.side * 12;
+    this.audio.crack();
+    this.burst(bx, 0.7, ft.z, C.wood, 22, 7, 0.24, 0.9, 8, 1.5);
+    this.burst(bx, 0.8, ft.z, C.moss, 16, 6, 0.28, 0.8, 6, 2.0);
+    this.spawnRing(bx, ft.z, 4.2, 1.3, 1.3);
+    this.damage(18, 0.85, bx, bz);
+  }
+
+  private hitGator(g: RiverGator) {
+    g.hit = true;
+    const bx = this.boat.position.x;
+    const bz = this.boat.position.z;
+    const side = bx >= g.x ? 1 : -1;
+    this.pushVx = side * 12.5;
+    this.audio.gatorSnap();
+    this.burst(g.x, 0.45, g.z, C.foam, 26, 7.5, 0.34, 0.9, 7, 2.2);
+    this.burst(g.x, 0.45, g.z, C.spray, 14, 6.5, 0.30, 0.8, 6, 2.0);
+    this.spawnRing(g.x, g.z, 4.5, 1.2, 1.3);
+    this.damage(16, 0.8, bx, bz);
+  }
+
+  private hitForkIslet(fk: ForkIslet) {
+    const bx = this.boat.position.x;
+    const bz = this.boat.position.z;
+    const side = bx >= fk.x ? 1 : -1;
+    this.pushVx = side * 14;
+    this.audio.thud();
+    this.burst(bx, 0.6, bz - 1, C.moss, 18, 6.5, 0.28, 0.9, 7, 2.0);
+    this.burst(bx, 0.5, bz - 1, C.wood, 10, 5.5, 0.22, 0.8, 8, 1.6);
+    this.spawnRing(bx, bz - 1, 4.2, 1.2, 1.3);
+    this.damage(18, 0.82, bx, bz);
   }
 
   private fireStrike(s: Strike) {
@@ -4269,12 +4589,34 @@ export class GameEngine {
     }
 
     // ---------- speed ----------
-    if (this.state === "playing") this.speed = tune.baseSpeed + tune.maxExtraSpeed * Math.pow(d, 0.8);
+    if (this.mSwarmBoostT > 0) this.mSwarmBoostT = Math.max(0, this.mSwarmBoostT - dt);
+    if (this.mBankScrapeCd > 0) this.mBankScrapeCd = Math.max(0, this.mBankScrapeCd - dt);
+    if (this.mLilyRustleCd > 0) this.mLilyRustleCd = Math.max(0, this.mLilyRustleCd - dt);
+    if (this.state === "playing") {
+      const swarmBoost = isMangrove ? 2.5 * smooth(this.mSwarmBoostT, 0, 0.85) : 0;
+      const dragMult = isMangrove ? 1 - 0.38 * this.mLilyDrag : 1;
+      this.speed = (tune.baseSpeed + tune.maxExtraSpeed * Math.pow(d, 0.8) + swarmBoost) * dragMult;
+    }
     else if (over) this.speed += (3.5 - this.speed) * Math.min(1, rawDt * 0.8);
     else this.speed += (12 - this.speed) * Math.min(1, rawDt * 2);
     boat.position.z -= this.speed * dt;
     const bz = boat.position.z;
     const distMeters = Math.max(0, Math.floor(-bz / 10));
+    if (isMangrove && this.state === "playing" && this.mSwarmBoostT > 0.1 && Math.random() < 0.45) {
+      this.emit(
+        boat.position.x + (Math.random() - 0.5) * 2.2,
+        this.boatY + 0.5 + Math.random() * 0.9,
+        bz + 1.8,
+        (Math.random() - 0.5) * 1.4,
+        0.5 + Math.random() * 0.9,
+        2.5,
+        C.firefly,
+        0.24,
+        0.7,
+        4,
+        2,
+      );
+    }
 
     // ---------- biomes & atmosphere ----------
     const resolvedArea = resolveAreaKey(this.environment, distMeters);
@@ -4352,6 +4694,52 @@ export class GameEngine {
       }
     } else {
       if (this.lighthouse) this.lighthouse.visible = false;
+    }
+
+    // ---------- sacred spirit tree havens (mangrove mode every 200m) ----------
+    if (isMangrove && distToMilestoneM < 210 && distToMilestoneM > -35) {
+      this.spiritHaven.group.visible = true;
+      this.spiritHaven.group.position.set(0, 0, milestoneZ);
+      this.spiritHaven.auraMat.opacity = 0.20 + 0.14 * Math.sin(this.t * 3.0);
+      this.spiritHaven.light.intensity = 78 + 20 * Math.sin(this.t * 2.6);
+
+      if (this.state === "playing" && bz <= milestoneZ && this.lastSpiritHavenTriggered < nextMilestoneM) {
+        this.lastSpiritHavenTriggered = nextMilestoneM;
+        this.audio.spiritHaven();
+        this.energy = Math.min(100, this.energy + 50);
+        const havenBonus = 500;
+        this.score += havenBonus;
+        this.cb.onPopup({
+          text: `+${havenBonus} SPIRIT HAVEN`,
+          x: 50,
+          y: 35,
+          tone: "teal",
+        });
+        this.cb.onAlert({
+          text: `Sacred Spirit Tree · ${nextMilestoneM}m Reached!`,
+          tone: "milestone",
+        });
+        this.lanternPulse = 2.2;
+        this.mSwarmBoostT = Math.max(this.mSwarmBoostT, 2.2);
+        const bpx = boat.position.x;
+        for (let p = 0; p < 30; p++) {
+          this.emit(
+            bpx + (Math.random() - 0.5) * 4,
+            this.boatY + 1.4,
+            bz + (Math.random() - 0.5) * 4,
+            (Math.random() - 0.5) * 7,
+            2.2 + Math.random() * 4.5,
+            (Math.random() - 0.5) * 7,
+            p % 2 === 0 ? C.teal : C.firefly,
+            0.22,
+            1.35,
+            6,
+            0.5,
+          );
+        }
+      }
+    } else {
+      if (this.spiritHaven) this.spiritHaven.group.visible = false;
     }
 
     // ---------- currents: whirlpools + crosswind ----------
@@ -4446,6 +4834,19 @@ export class GameEngine {
     let nx = damp(prevX, clamp(targetX, -STEER_RANGE, STEER_RANGE), 5.4, dt);
     nx += this.pushVx * dt;
     this.pushVx *= Math.exp(-4 * dt);
+    if (isMangrove && this.state === "playing" && Math.abs(nx) >= STEER_RANGE - 0.55) {
+      const bankSide = Math.sign(nx);
+      this.pushVx += -bankSide * 24 * dt;
+      nx = clamp(nx, -(STEER_RANGE - 0.4), STEER_RANGE - 0.4);
+      if (this.mBankScrapeCd <= 0) {
+        this.mBankScrapeCd = 0.48;
+        this.addShake(0.11);
+        this.haptic(12);
+        this.audio.mangroveLeafRustle(bankSide * 0.85);
+        this.burst(nx + bankSide * 0.95, this.boatY + 0.65, bz - 0.5, C.moss, 10, 4.5, 0.24, 0.7, 6, 2);
+        this.burst(nx + bankSide * 0.95, this.boatY + 0.5, bz - 0.5, C.wood, 5, 3.8, 0.20, 0.6, 8, 1.5);
+      }
+    }
     boat.position.x = clamp(nx, -STEER_RANGE - 1, STEER_RANGE + 1);
     const vx = (boat.position.x - prevX) / Math.max(dt, 0.0001);
     this.vxSmooth = damp(this.vxSmooth, vx, 5, dt);
@@ -4520,7 +4921,8 @@ export class GameEngine {
       this.rockTimer -= dt;
       if (this.rockTimer <= 0) {
         this.spawnRocks(d);
-        this.rockTimer = lerp(tune.rockPaceStart, tune.rockPaceEnd, d) + Math.random() * 0.55;
+        const rockBase = lerp(tune.rockPaceStart, tune.rockPaceEnd, d);
+        this.rockTimer = (isMangrove ? rockBase * 1.22 : rockBase) + Math.random() * 0.55;
       }
       if (this.runTime > tune.mineUnlock) {
         this.mineTimer -= dt;
@@ -4529,7 +4931,7 @@ export class GameEngine {
           this.mineTimer = lerp(tune.minePaceStart, tune.minePaceEnd, d) + Math.random() * 1.4;
         }
       }
-      if (this.runTime > tune.logUnlock) {
+      if (!isMangrove && this.runTime > tune.logUnlock) {
         this.logTimer -= dt;
         if (this.logTimer <= 0) {
           this.spawnLog();
@@ -4543,11 +4945,41 @@ export class GameEngine {
           this.waveTimer = lerp(11, 6.2, d) + Math.random() * 3.0;
         }
       }
-      if (this.runTime > tune.whirlUnlock) {
+      if (!isMangrove && this.runTime > tune.whirlUnlock) {
         this.whirlTimer -= dt;
         if (this.whirlTimer <= 0) {
           this.spawnWhirl();
           this.whirlTimer = lerp(20, 13, d) + Math.random() * 5;
+        }
+      }
+      if (isMangrove) {
+        if (this.runTime > 10) {
+          this.mTrunkTimer -= dt;
+          if (this.mTrunkTimer <= 0) {
+            this.spawnFallenTrunk(d);
+            this.mTrunkTimer = lerp(8.2, 4.8, d) + Math.random() * 2.2;
+          }
+        }
+        if (this.runTime > 16) {
+          this.mGatorTimer -= dt;
+          if (this.mGatorTimer <= 0) {
+            this.spawnGator(d);
+            this.mGatorTimer = lerp(9.4, 5.4, d) + Math.random() * 2.6;
+          }
+        }
+        if (this.runTime > 6.5) {
+          this.mLilyMatTimer -= dt;
+          if (this.mLilyMatTimer <= 0) {
+            this.spawnLilyMat();
+            this.mLilyMatTimer = lerp(6.2, 3.8, d) + Math.random() * 1.8;
+          }
+        }
+        if (this.runTime > 24) {
+          this.mForkTimer -= dt;
+          if (this.mForkTimer <= 0) {
+            this.spawnForkIslet();
+            this.mForkTimer = lerp(25, 18, d) + Math.random() * 5;
+          }
         }
       }
       this.jellyTimer -= dt;
@@ -4758,6 +5190,113 @@ export class GameEngine {
       } else if (!l.passed && l.z > bz + 5) {
         l.passed = true;
         if (l.minD < 3.1) this.closeCall();
+      }
+    }
+
+    // ---------- mangrove fallen trunks ----------
+    for (const ft of this.fallenTrunks) {
+      if (!ft.active) continue;
+      if (ft.z > behind + 4) {
+        ft.active = false;
+        ft.mesh.visible = false;
+        continue;
+      }
+      ft.mesh.position.y = this.surf(ft.side * 8, ft.z) * 0.35;
+      if (!playing || ft.hit) continue;
+      const dz = ft.z - bz;
+      if (this.invulnT <= 0 && Math.abs(dz) < 1.85 && bx >= ft.xMin - 0.85 && bx <= ft.xMax + 0.85) {
+        this.hitFallenTrunk(ft);
+      } else if (!ft.passed && dz > 2.5) {
+        ft.passed = true;
+        if (Math.abs(bx - ft.tipX) < 3.6) this.closeCall();
+      }
+    }
+
+    // ---------- mangrove patrolling river gators ----------
+    for (const g of this.gators) {
+      if (!g.active) continue;
+      if (g.z > behind + 4) {
+        g.active = false;
+        g.rig.group.visible = false;
+        continue;
+      }
+      g.x += g.vx * dt;
+      if (g.x > STEER_RANGE - 2.2) {
+        g.x = STEER_RANGE - 2.2;
+        g.vx = -Math.abs(g.vx);
+      } else if (g.x < -(STEER_RANGE - 2.2)) {
+        g.x = -(STEER_RANGE - 2.2);
+        g.vx = Math.abs(g.vx);
+      }
+      const gy = this.surf(g.x, g.z);
+      g.rig.group.position.set(g.x, gy - 0.02, g.z);
+      g.rig.group.rotation.y = g.vx >= 0 ? 0 : Math.PI;
+      g.rig.tailPivot.rotation.y = Math.sin(this.t * 8.2 + g.phase) * 0.38;
+      g.rig.eyeMat.emissiveIntensity = 3.1 + 0.9 * Math.sin(this.t * 4.5 + g.phase);
+      if (Math.random() < 0.28) {
+        this.emit(g.x, gy + 0.08, g.z, -g.vx * 0.25, 0.35, 0.8, C.spray, 0.2, 0.55, 3, 2);
+      }
+      if (!playing || g.hit) continue;
+      const dist = Math.hypot(g.x - bx, g.z - bz);
+      if (this.invulnT <= 0 && dist < 2.55) {
+        this.hitGator(g);
+      } else if (!g.passed && g.z > bz + 2.8) {
+        g.passed = true;
+        if (Math.abs(g.x - bx) < 4.1) this.closeCall();
+      }
+    }
+
+    // ---------- mangrove lily drag mats ----------
+    let inLilyMat = false;
+    for (const lm of this.lilyMats) {
+      if (!lm.active) continue;
+      if (lm.z > behind + 4) {
+        lm.active = false;
+        lm.mesh.visible = false;
+        continue;
+      }
+      lm.mesh.position.y = this.surf(lm.x, lm.z) + 0.02;
+      if (!playing) continue;
+      if (Math.hypot(lm.x - bx, lm.z - bz) < lm.r) {
+        inLilyMat = true;
+        if (!lm.entered) {
+          lm.entered = true;
+          this.tmpV2.set(bx, this.boatY + 1.8, bz);
+          this.popup(this.tmpV2, "LILY DRAG", "amber");
+        }
+      }
+    }
+    this.mLilyDrag = inLilyMat ? 1 : 0;
+    if (playing && inLilyMat) {
+      if (!this.godMode) this.energy = Math.max(0, this.energy - 5.2 * dt);
+      if (this.mLilyRustleCd <= 0) {
+        this.mLilyRustleCd = 0.5;
+        this.audio.lilyRustle();
+        this.burst(bx, this.boatY + 0.3, bz, C.moss, 6, 3.6, 0.22, 0.65, 6, 2);
+      }
+    }
+
+    // ---------- mangrove bifurcating mudbank fork islets ----------
+    for (const fk of this.forkIslets) {
+      if (!fk.active) continue;
+      if (fk.z > behind + 10) {
+        fk.active = false;
+        fk.mesh.visible = false;
+        continue;
+      }
+      if (!playing) continue;
+      const dz = fk.z - bz;
+      const dx = Math.abs(bx - fk.x);
+      if (Math.abs(dz) < fk.halfL + 1.0 && dx < fk.halfW + 0.75) {
+        if (this.invulnT <= 0) {
+          this.hitForkIslet(fk);
+        } else {
+          const pushSide = bx >= fk.x ? 1 : -1;
+          this.pushVx = pushSide * 11;
+        }
+      } else if (!fk.passed && dz > fk.halfL + 1.6) {
+        fk.passed = true;
+        if (dx < fk.halfW + 2.4) this.closeCall();
       }
     }
 
@@ -5033,14 +5572,26 @@ export class GameEngine {
       if (m.active && n < this.NG && Math.abs(m.z - bz) < 60) {
         pos[n].set(m.x, m.group.position.y + 1.0, m.z, 0.85);
         col[n].set(
-          isMangrove ? 0.26 : 1.0,
-          isMangrove ? 0.90 : 0.16,
-          isMangrove ? 0.76 : 0.12,
+          1.0,
+          isMangrove ? 0.28 : 0.16,
+          isMangrove ? 0.14 : 0.12,
         );
         n++;
       }
     }
     if (isMangrove) {
+      if (this.spiritHaven?.group.visible && n < this.NG) {
+        pos[n].set(0, 3.5, this.spiritHaven.group.position.z, 2.2);
+        col[n].set(0.26, 0.90, 0.76);
+        n++;
+      }
+      for (const g of this.gators) {
+        if (g.active && n < this.NG && Math.abs(g.z - bz) < 55) {
+          pos[n].set(g.x, 0.4, g.z, 0.55);
+          col[n].set(1.0, 0.52, 0.14);
+          n++;
+        }
+      }
       let bioAdded = 0;
       for (const b of this.mBios) {
         if (bioAdded >= 2 || n >= this.NG) break;

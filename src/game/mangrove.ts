@@ -748,3 +748,326 @@ export function makeTangledHazardGeometry(seed = 21.3): THREE.BufferGeometry {
   for (const p of parts) p.dispose();
   return merged;
 }
+
+/**
+ * Moss-covered fallen mangrove trunk extending from a riverbank across ~55-65% of
+ * the navigable canal (+X from bank), forcing the player to weave through the open side.
+ */
+export function makeFallenTrunkGeometry(seed = 31.1): THREE.BufferGeometry {
+  const rnd = seededRand(seed);
+  const parts: THREE.BufferGeometry[] = [];
+
+  // Main arched fallen trunk (~18.5m reach from bank root crown to partially submerged tip)
+  const pts = [
+    new THREE.Vector3(0, 1.35, 0),
+    new THREE.Vector3(4.8, 0.95, (rnd() - 0.5) * 0.7),
+    new THREE.Vector3(10.2, 0.52, (rnd() - 0.5) * 0.9),
+    new THREE.Vector3(15.2, 0.18, (rnd() - 0.5) * 0.6),
+    new THREE.Vector3(18.5, -0.35, 0),
+  ];
+  parts.push(
+    buildTaperedBranchGeo(pts, 0.68, 0.24, 14, 7, (v) => {
+      const moss = v.y > 0.45 ? 0.14 : 0.04;
+      return [0.22 + moss * 0.25, 0.19 + moss, 0.13 + moss * 0.2];
+    }),
+  );
+
+  // Broken side snag limbs jutting organically off the fallen trunk
+  const curve = new THREE.CatmullRomCurve3(pts);
+  for (let i = 0; i < 3; i++) {
+    const t = 0.28 + i * 0.24;
+    const base = curve.getPointAt(t);
+    const dirZ = (i % 2 === 0 ? 1 : -1) * (1.1 + rnd() * 0.6);
+    const tip = base.clone().add(new THREE.Vector3(0.7, 0.75 + rnd() * 0.45, dirZ));
+    parts.push(
+      buildTaperedBranchGeo([base, tip], 0.19, 0.06, 4, 5, () => [0.24, 0.21, 0.15]),
+    );
+  }
+
+  // Moss & fern tufts resting along the top bark ridge
+  for (let i = 0; i < 3; i++) {
+    const pt = curve.getPointAt(0.2 + i * 0.26);
+    const lobe = buildFoliageLobeGeo(
+      pt.clone().add(new THREE.Vector3(0, 0.48, 0)),
+      1.1,
+      0.38,
+      0.85,
+      seed + i * 9,
+    );
+    parts.push(lobe);
+  }
+
+  const normalized = parts.map((p) => {
+    const g = p.index ? p.toNonIndexed() : p;
+    g.deleteAttribute("uv");
+    return g;
+  });
+  for (let i = 0; i < parts.length; i++) {
+    if (normalized[i] !== parts[i]) parts[i].dispose();
+  }
+  const merged = mergeGeometries(normalized, false)!;
+  for (const p of normalized) p.dispose();
+  return merged;
+}
+
+/** Dense floating lily-pad & aquatic hyacinth drag mat (non-lethal slow zone). */
+export function makeLilyMatGeometry(seed = 41.7): THREE.BufferGeometry {
+  const rnd = seededRand(seed);
+  const parts: THREE.BufferGeometry[] = [];
+  const pads = 22;
+  for (let i = 0; i < pads; i++) {
+    const a = (i / pads) * Math.PI * 2 + (rnd() - 0.5) * 0.4;
+    const dist = Math.pow(rnd(), 0.65) * 2.85;
+    const ox = Math.cos(a) * dist;
+    const oz = Math.sin(a) * dist;
+    const r = 0.42 + rnd() * 0.36;
+    const pad = new THREE.CircleGeometry(r, 12, rnd() * Math.PI * 2, Math.PI * 1.84).toNonIndexed();
+    pad.rotateX(-Math.PI / 2);
+
+    const pos = pad.getAttribute("position") as THREE.BufferAttribute;
+    const col = new Float32Array(pos.count * 3);
+    const shade = 0.72 + rnd() * 0.38;
+    for (let k = 0; k < pos.count; k++) {
+      const px = pos.getX(k);
+      const pz = pos.getZ(k);
+      const rad = clamp(Math.hypot(px, pz) / r, 0, 1);
+      pos.setXYZ(k, px + ox, 0.05 + Math.pow(rad, 3) * 0.04, pz + oz);
+      col[k * 3] = lerp(0.05, 0.14, rad) * shade;
+      col[k * 3 + 1] = lerp(0.22, 0.38, rad) * shade;
+      col[k * 3 + 2] = lerp(0.11, 0.18, rad) * shade;
+    }
+    pad.setAttribute("color", new THREE.BufferAttribute(col, 3));
+    pad.computeVertexNormals();
+    parts.push(pad);
+
+    if (i % 4 === 0) {
+      const leaf = buildLeafBladeGeo(a, 0.65, 0.22, 0.38, -0.08, [0.06, 0.24, 0.14], [0.16, 0.44, 0.28]);
+      leaf.translate(ox, 0.05, oz);
+      parts.push(leaf);
+    }
+  }
+  const merged = mergeGeometries(parts, false);
+  for (const p of parts) p.dispose();
+  return merged;
+}
+
+export interface RiverGatorRig {
+  group: THREE.Group;
+  tailPivot: THREE.Group;
+  eyeMat: THREE.MeshStandardMaterial;
+}
+
+/** Stealthy river crocodile/gator cruising near the waterline with glowing amber eye glints. */
+export function makeGatorGroup(): RiverGatorRig {
+  const group = new THREE.Group();
+  const hideMat = new THREE.MeshStandardMaterial({
+    color: 0x182419,
+    roughness: 0.58,
+    metalness: 0.12,
+  });
+  const scuteMat = new THREE.MeshStandardMaterial({
+    color: 0x243322,
+    roughness: 0.72,
+    metalness: 0.08,
+  });
+
+  // Tapered armored body & broad flat snout oriented along +X swim direction
+  const bodyGeo = new THREE.CylinderGeometry(0.32, 0.44, 2.5, 10);
+  bodyGeo.rotateZ(-Math.PI / 2);
+  bodyGeo.scale(1, 0.48, 1.05);
+  const body = new THREE.Mesh(bodyGeo, hideMat);
+  body.position.set(0.1, 0.04, 0);
+  group.add(body);
+
+  const headGeo = new THREE.ConeGeometry(0.36, 1.35, 8);
+  headGeo.rotateZ(-Math.PI / 2);
+  headGeo.scale(1, 0.40, 0.92);
+  const head = new THREE.Mesh(headGeo, hideMat);
+  head.position.set(1.75, 0.05, 0);
+  group.add(head);
+
+  // Dorsal armored spine ridges breaking the water surface
+  const ridgeGeo = new THREE.ConeGeometry(0.10, 0.22, 5);
+  for (let i = 0; i < 6; i++) {
+    const r = new THREE.Mesh(ridgeGeo, scuteMat);
+    r.position.set(-0.85 + i * 0.36, 0.20, (i % 2 === 0 ? 1 : -1) * 0.09);
+    group.add(r);
+  }
+
+  // Distinct glowing amber-orange eye glints clearly visible in dark mangrove water
+  const eyeMat = new THREE.MeshStandardMaterial({
+    color: 0xffc04d,
+    emissive: new THREE.Color(1.0, 0.52, 0.12),
+    emissiveIntensity: 3.6,
+    roughness: 0.2,
+    fog: false,
+  });
+  const eyeGeo = new THREE.SphereGeometry(0.068, 8, 8);
+  for (const side of [-1, 1]) {
+    const eye = new THREE.Mesh(eyeGeo, eyeMat);
+    eye.position.set(1.36, 0.22, side * 0.16);
+    group.add(eye);
+  }
+
+  // Animated swimming tail behind torso
+  const tailPivot = new THREE.Group();
+  tailPivot.position.set(-1.05, 0.03, 0);
+  const tailGeo = new THREE.ConeGeometry(0.32, 2.1, 8);
+  tailGeo.rotateZ(Math.PI / 2);
+  tailGeo.scale(1, 0.5, 0.85);
+  tailGeo.translate(-1.0, 0, 0);
+  tailPivot.add(new THREE.Mesh(tailGeo, hideMat));
+  group.add(tailPivot);
+
+  return { group, tailPivot, eyeMat };
+}
+
+/** Narrow mossy mangrove mudbank islet splitting the canal into left & right fork channels. */
+export function makeMudbankIsletGeometry(seed = 63.9): THREE.BufferGeometry {
+  const parts: THREE.BufferGeometry[] = [];
+
+  // Elongated muddy bank mound (width ~5.4m, length ~15m along Z)
+  const bankGeo = new THREE.IcosahedronGeometry(1, 3).toNonIndexed();
+  const bPos = bankGeo.getAttribute("position") as THREE.BufferAttribute;
+  const bCol = new Float32Array(bPos.count * 3);
+  for (let i = 0; i < bPos.count; i++) {
+    const x = bPos.getX(i);
+    const y = bPos.getY(i);
+    const z = bPos.getZ(i);
+    const n = noise3(x * 2.2 + seed, y * 2.2, z * 2.2);
+    const py = y * 0.95 + (y > 0 ? n * 0.38 : 0);
+    bPos.setXYZ(i, x * 2.75 * (0.88 + n * 0.24), py - 0.18, z * 7.6 * (0.9 + n * 0.18));
+    const moss = clamp((py - 0.12) / 0.7, 0, 1);
+    bCol[i * 3] = lerp(0.11, 0.08, moss);
+    bCol[i * 3 + 1] = lerp(0.09, 0.24, moss);
+    bCol[i * 3 + 2] = lerp(0.06, 0.13, moss);
+  }
+  bankGeo.setAttribute("color", new THREE.BufferAttribute(bCol, 3));
+  bankGeo.computeVertexNormals();
+  parts.push(bankGeo);
+
+  // Gnarled roots & foliage crown rising on the islet
+  const centerTree = makeMangroveArchetype(seed + 7.1);
+  const barkNonIdx = centerTree.barkGeo.index ? centerTree.barkGeo.toNonIndexed() : centerTree.barkGeo;
+  barkNonIdx.scale(0.55, 0.72, 0.55);
+  barkNonIdx.translate(-0.4, 0.1, 0);
+  parts.push(barkNonIdx);
+  const canopyNonIdx = centerTree.canopyGeo.index ? centerTree.canopyGeo.toNonIndexed() : centerTree.canopyGeo;
+  canopyNonIdx.scale(0.55, 0.72, 0.55);
+  canopyNonIdx.translate(-0.4, 0.1, 0);
+  parts.push(canopyNonIdx);
+  if (barkNonIdx !== centerTree.barkGeo) centerTree.barkGeo.dispose();
+  if (canopyNonIdx !== centerTree.canopyGeo) centerTree.canopyGeo.dispose();
+
+  for (const [fx, fz] of [
+    [-1.1, 3.8],
+    [1.0, -3.5],
+    [0.4, 4.6],
+  ]) {
+    const f = makeFernBushGeometry(seed + fz);
+    const fn = f.index ? f.toNonIndexed() : f;
+    if (fn !== f) f.dispose();
+    fn.scale(0.9, 0.9, 0.9);
+    fn.translate(fx, 0.25, fz);
+    parts.push(fn);
+  }
+
+  const normalized = parts.map((p) => {
+    const g = p.index ? p.toNonIndexed() : p;
+    g.deleteAttribute("uv");
+    return g;
+  });
+  for (let i = 0; i < parts.length; i++) {
+    if (normalized[i] !== parts[i]) parts[i].dispose();
+  }
+  const merged = mergeGeometries(normalized, false)!;
+  for (const p of normalized) p.dispose();
+  return merged;
+}
+
+export interface SpiritHavenRig {
+  group: THREE.Group;
+  auraMat: THREE.MeshBasicMaterial;
+  light: THREE.PointLight;
+}
+
+/** Colossal Sacred Spirit Tree Arch spanning overhead across the river (every 200m Haven). */
+export function makeSpiritTreeHavenGroup(barkTex: THREE.CanvasTexture): SpiritHavenRig {
+  const group = new THREE.Group();
+  const barkMat = new THREE.MeshStandardMaterial({
+    map: barkTex,
+    bumpMap: barkTex,
+    bumpScale: 0.35,
+    vertexColors: true,
+    roughness: 0.72,
+  });
+  const canopyMat = new THREE.MeshStandardMaterial({
+    vertexColors: true,
+    roughness: 0.68,
+  });
+  const blossomMat = new THREE.MeshStandardMaterial({
+    color: 0x43e6c1,
+    emissive: new THREE.Color("#43E6C1"),
+    emissiveIntensity: 2.2,
+    roughness: 0.3,
+  });
+
+  // Left and Right twin giant overarching shrine trunks meeting seamlessly at peak (~12m high)
+  for (const side of [-1, 1]) {
+    const spanPts = [
+      new THREE.Vector3(side * 19.5, -1.8, 0),
+      new THREE.Vector3(side * 16.5, 4.5, side * 0.6),
+      new THREE.Vector3(side * 10.5, 9.8, 0),
+      new THREE.Vector3(side * 3.5, 11.8, -side * 0.4),
+      new THREE.Vector3(0, 11.5, 0),
+    ];
+    const trunk = buildTaperedBranchGeo(spanPts, 0.85, 0.26, 12, 7, barkColorAt);
+    group.add(new THREE.Mesh(trunk, barkMat));
+
+    // Crown foliage & glowing spirit blossom orbs draping along the sanctuary arch
+    const curve = new THREE.CatmullRomCurve3(spanPts);
+    for (let i = 0; i < 4; i++) {
+      const pt = curve.getPointAt(0.42 + i * 0.17);
+      const crown = buildFoliageLobeGeo(
+        pt.clone().add(new THREE.Vector3(0, 0.9, 0)),
+        2.6,
+        1.25,
+        2.4,
+        side * 11 + i * 7,
+      );
+      group.add(new THREE.Mesh(crown, canopyMat));
+
+      const orb = new THREE.Mesh(new THREE.SphereGeometry(0.28, 8, 8), blossomMat);
+      orb.position.copy(pt).add(new THREE.Vector3(0, -1.0 - (i % 2) * 0.6, 0));
+      group.add(orb);
+    }
+
+    // Glowing bank shrine flora flanking each side of the gate
+    const bankBio = makeBioPlantGeometry(side * 19 + 4);
+    const bm = new THREE.Mesh(bankBio, blossomMat);
+    bm.position.set(side * 15.8, 0.15, 0);
+    bm.scale.setScalar(1.8);
+    group.add(bm);
+  }
+
+  // Luminous cyan spirit gate aura band skimming across the river surface
+  const auraGeo = new THREE.PlaneGeometry(31, 2.2);
+  auraGeo.rotateX(-Math.PI / 2);
+  const auraMat = new THREE.MeshBasicMaterial({
+    color: 0x43e6c1,
+    transparent: true,
+    opacity: 0.26,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+    side: THREE.DoubleSide,
+  });
+  const aura = new THREE.Mesh(auraGeo, auraMat);
+  aura.position.y = 0.14;
+  group.add(aura);
+
+  const light = new THREE.PointLight(0x43e6c1, 85, 55, 1.5);
+  light.position.set(0, 9.5, 0);
+  group.add(light);
+
+  return { group, auraMat, light };
+}

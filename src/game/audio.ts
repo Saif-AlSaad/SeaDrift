@@ -258,6 +258,37 @@ export class GameAudio {
     this.tone(1760.0, { type: "sine", peak: 0.035, attack: 0.002, decay: 0.6, delay: 0.008 });
   }
 
+  /** Deep, resonant Sacred Spirit Tree shrine chime for Mangrove 200m checkpoints. */
+  spiritHaven() {
+    const ctx = this.ensure();
+    if (!ctx || this.muted) return;
+    [196.0, 293.66, 392.0, 587.33, 739.99].forEach((f, i) => {
+      this.tone(f, {
+        type: i < 2 ? "triangle" : "sine",
+        peak: 0.12 - i * 0.015,
+        attack: 0.06,
+        decay: 2.2 - i * 0.2,
+        delay: i * 0.085,
+      });
+    });
+    this.noise({ dur: 1.4, peak: 0.04, freq: 720, type: "bandpass", delay: 0.05 });
+  }
+
+  /** Sharp low jaw snap & water splash when grazing a cruising river gator. */
+  gatorSnap() {
+    const ctx = this.ensure();
+    if (!ctx || this.muted) return;
+    this.tone(138, { type: "sawtooth", peak: 0.24, attack: 0.004, decay: 0.22, glideTo: 48 });
+    this.noise({ dur: 0.32, peak: 0.22, freq: 680, type: "bandpass", delay: 0.02 });
+  }
+
+  /** Soft wet foliage brush when wading through dense floating lily mats. */
+  lilyRustle() {
+    const ctx = this.ensure();
+    if (!ctx || this.muted) return;
+    this.noise({ dur: 0.28, peak: 0.07, freq: 920, type: "bandpass" });
+  }
+
   /** Helper routing a node through a stereo panner into master output. */
   private pannedDest(pan: number): AudioNode {
     if (!this.ctx || !this.master) throw new Error("Audio not initialized");
