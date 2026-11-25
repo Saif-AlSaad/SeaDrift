@@ -1009,23 +1009,15 @@ export default function App() {
 
               {/* homepage hero */}
               <div className="anim-fadeUp flex flex-col items-center text-center">
-                <img
-                  src="./icon.png"
-                  alt="SeaDrift"
-                  className="mb-4 h-20 w-20 rounded-2xl border border-foam/20 shadow-[0_0_32px_rgba(255,180,84,0.35)] transition-transform duration-300 hover:scale-105"
-                />
                 <div className="mb-3 flex items-center justify-center gap-2 text-[10px] font-semibold tracking-[0.36em] text-foam/70">
                   {I.boat("h-4 w-4 shrink-0 text-amber")}
-                  SEADRIFT · DUSK VOYAGE
+                  DUSK VOYAGE
                   {I.boat("h-4 w-4 shrink-0 -scale-x-100 text-amber")}
                 </div>
-                <h1 className="title-glow font-display text-7xl font-black tracking-tight text-foam md:text-8xl">
-                  DRIFT
+                <h1 className="title-glow font-title text-6xl font-normal tracking-wide text-foam sm:text-7xl md:text-8xl">
+                  Sea Drift
                 </h1>
                 <WaveLine />
-                <p className="mx-auto mt-4 max-w-sm text-[15px] leading-relaxed text-foam/80 [text-shadow:0_1px_12px_rgba(0,0,0,0.65)]">
-                  Gather glowing lights to keep your lamp burning. Unlock hidden waters beyond the dusk.
-                </p>
 
                 <div className="mt-7 flex flex-col items-center gap-3">
                   <button
@@ -1052,20 +1044,6 @@ export default function App() {
                         {I.flame("h-3.5 w-3.5")}
                         BEST {best.toLocaleString("en-US")}
                       </button>
-                    )}
-                    {!IS_NATIVE && (
-                      <a
-                        href={APK_DOWNLOAD_URL}
-                        download="SeaDrift.apk"
-                        className="inline-flex items-center gap-1.5 rounded-full border border-emerald-500/35 bg-emerald-950/45 px-3.5 py-1 text-xs font-semibold text-emerald-300 transition-all hover:border-emerald-400 hover:bg-emerald-900/60"
-                        title="Download Android APK for 100% offline play"
-                      >
-                        {I.download("h-3.5 w-3.5")}
-                        <span>Android APK</span>
-                        <span className="rounded bg-emerald-500/20 px-1.5 py-0.2 text-[9px] font-bold uppercase tracking-wider text-emerald-300">
-                          Offline
-                        </span>
-                      </a>
                     )}
                   </div>
                 </div>

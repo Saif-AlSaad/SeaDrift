@@ -37,6 +37,14 @@
   unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C4, U+2113, U+2C60-2C7F, U+A720-A7FF;
 }
 
+@font-face {
+  font-family: 'Yameno Demo';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("./assets/fonts/yameno-demo.otf") format("opentype");
+}
+
 @theme {
   --color-ink: #041218;
   --color-ink2: #071c23;
@@ -45,6 +53,7 @@
   --color-amber: #ffb454;
   --color-ember: #ff7a45;
   --color-lumen: #3fd9c0;
+  --font-title: "Yameno Demo", "Unbounded", "Space Grotesk", sans-serif;
   --font-display: "Unbounded", "Space Grotesk", sans-serif;
   --font-body: "Space Grotesk", sans-serif;
 }

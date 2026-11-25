@@ -5,6 +5,8 @@ export type TouchControl = "drag" | "follow" | "tilt";
 export type EnvironmentMode = "sea" | "mangrove";
 
 export const MANGROVE_UNLOCK_COST = 2000;
+/** Temporary flag to keep Enchanted Mangrove unlocked for testing; set false to re-enable 2,000-Lights gate. */
+const TEST_UNLOCK_MANGROVE: boolean = true;
 
 export interface GameSettings {
   volume: number; // 0..1
@@ -142,6 +144,7 @@ export function addLights(amount: number): number {
 
 /** Load unlocked environment modes ("sea" is always available as base mode). */
 export function loadUnlockedModes(): EnvironmentMode[] {
+  if (TEST_UNLOCK_MANGROVE) return ["sea", "mangrove"];
   const base: EnvironmentMode[] = ["sea"];
   try {
     const raw = localStorage.getItem(UNLOCKED_KEY);
