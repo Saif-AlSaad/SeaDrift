@@ -30,9 +30,14 @@ import {
 } from "./scenery";
 import {
   getMangroveCorridorParams,
+  makeBioPlantGeometry,
+  makeFernBushGeometry,
   makeMangroveArchGeometry,
   makeMangroveArchetype,
   makeMangroveBarkTexture,
+  makeRootSnagGeometry,
+  makeTangledHazardGeometry,
+  makeWaterLilyGeometry,
 } from "./mangrove";
 
 export type GameState = "menu" | "playing" | "paused" | "gameover";
@@ -368,6 +373,7 @@ interface Wisp {
 interface Rock {
   group: THREE.Group;
   body: THREE.Mesh;
+  snagBody: THREE.Mesh;
   foam: THREE.Mesh;
   x: number;
   z: number;
@@ -379,6 +385,8 @@ interface Rock {
 interface Mine {
   group: THREE.Group;
   body: THREE.Group;
+  shellBody: THREE.Group;
+  tangleBody: THREE.Group;
   beacon: THREE.MeshStandardMaterial;
   halo: THREE.Sprite;
   x: number;
@@ -754,6 +762,18 @@ export class GameEngine {
   private mArchCanopyInst: THREE.InstancedMesh[] = [];
   private mTrees: MangroveSlot[] = [];
   private mArches: MangroveArchSlot[] = [];
+  private mFernInst!: THREE.InstancedMesh;
+  private mLilyInst!: THREE.InstancedMesh;
+  private mBioInst!: THREE.InstancedMesh;
+  private mFerns: Array<{ x: number; z: number; yaw: number; scale: number }> = [];
+  private mLilies: Array<{ x: number; z: number; yaw: number; scale: number }> = [];
+  private mBios: Array<{ x: number; z: number; yaw: number; scale: number }> = [];
+  private fireflies!: THREE.Points;
+  private fMat!: THREE.ShaderMaterial;
+  private fPos!: Float32Array;
+  private fSeed!: Float32Array;
+  private fCount = 0;
+  private mPollenTimer = 0;
   private mDummy = new THREE.Object3D();
   private mNextTreeZ = 20;
   private mNextArchZ = -10;
@@ -2326,11 +2346,17 @@ export class GameEngine {
       });
     }
 
-    // --- rocks ---
+    // --- rocks (and mangrove exposed root snags) ---
     const rockMat = new THREE.MeshStandardMaterial({
       vertexColors: true,
       roughness: 0.80,
       metalness: 0.08,
+    });
+    const snagGeos = [makeRootSnagGeometry(15.7), makeRootSnagGeometry(28.4)];
+    const snagMat = new THREE.MeshStandardMaterial({
+      vertexColors: true,
+      roughness: 0.72,
+      metalness: 0.06,
     });
     const foamTex = makeFoamRingTexture();
     const foamGeo = new THREE.PlaneGeometry(1, 1);
@@ -2338,6 +2364,8 @@ export class GameEngine {
     for (let i = 0; i < 24; i++) {
       const g = new THREE.Group();
       const body = new THREE.Mesh(this.rockGeos[i % this.rockGeos.length], rockMat);
+      const snagBody = new THREE.Mesh(snagGeos[i % snagGeos.length], snagMat);
+      snagBody.visible = false;
       const foam = new THREE.Mesh(
         foamGeo,
         new THREE.MeshBasicMaterial({
@@ -2348,13 +2376,13 @@ export class GameEngine {
           depthWrite: false,
         }),
       );
-      g.add(body, foam);
+      g.add(body, snagBody, foam);
       g.visible = false;
       this.scene.add(g);
-      this.rocks.push({ group: g, body, foam, x: 0, z: 0, s: 1.6, active: false, passed: false });
+      this.rocks.push({ group: g, body, snagBody, foam, x: 0, z: 0, s: 1.6, active: false, passed: false });
     }
 
-    // --- tethered sea mines ---
+    // --- tethered sea mines (and mangrove tangled floating root clusters) ---
     const ironMat = new THREE.MeshStandardMaterial({
       color: 0x36393e,
       roughness: 0.42,
@@ -2364,6 +2392,12 @@ export class GameEngine {
       color: 0x543220,
       roughness: 0.82,
       metalness: 0.35,
+    });
+    const tangleGeo = makeTangledHazardGeometry(21.3);
+    const tangleMat = new THREE.MeshStandardMaterial({
+      vertexColors: true,
+      roughness: 0.82,
+      metalness: 0.05,
     });
     const sphereGeo = new THREE.IcosahedronGeometry(0.68, 2);
     const hornGeo = new THREE.ConeGeometry(0.11, 0.34, 6);
@@ -2383,17 +2417,22 @@ export class GameEngine {
     for (let i = 0; i < 10; i++) {
       const g = new THREE.Group();
       const body = new THREE.Group();
-      body.add(new THREE.Mesh(sphereGeo, ironMat));
+      const mineShell = new THREE.Group();
+      mineShell.add(new THREE.Mesh(sphereGeo, ironMat));
       for (const [dx, dy, dz] of hornDirs) {
         const dir = new THREE.Vector3(dx, dy, dz).normalize();
         const horn = new THREE.Mesh(hornGeo, rustMat);
         horn.position.copy(dir).multiplyScalar(0.76);
         horn.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir);
-        body.add(horn);
+        mineShell.add(horn);
       }
       const chain = new THREE.Mesh(chainGeo, rustMat);
       chain.position.y = -1.1;
-      body.add(chain);
+      mineShell.add(chain);
+
+      const tangleBody = new THREE.Group();
+      tangleBody.add(new THREE.Mesh(tangleGeo, tangleMat));
+      tangleBody.visible = false;
 
       const beaconMat = new THREE.MeshStandardMaterial({
         color: 0xff1a10,
@@ -2417,7 +2456,7 @@ export class GameEngine {
       );
       halo.scale.setScalar(2.4);
       halo.position.y = 0.96;
-      body.add(beacon, halo);
+      body.add(mineShell, tangleBody, beacon, halo);
 
       g.add(body);
       g.visible = false;
@@ -2425,6 +2464,8 @@ export class GameEngine {
       this.mines.push({
         group: g,
         body,
+        shellBody: mineShell,
+        tangleBody,
         beacon: beaconMat,
         halo,
         x: 0,
@@ -3116,6 +3157,94 @@ export class GameEngine {
       }
     }
 
+    // --- shoreline vegetation, floating lilies, bioluminescent plants & fireflies ---
+    const vegMat = new THREE.MeshStandardMaterial({
+      vertexColors: true,
+      roughness: 0.72,
+      metalness: 0.04,
+      side: THREE.DoubleSide,
+    });
+    const bioMat = new THREE.MeshStandardMaterial({
+      vertexColors: true,
+      emissive: new THREE.Color("#43E6C1"),
+      emissiveIntensity: 0.95,
+      roughness: 0.45,
+      side: THREE.DoubleSide,
+    });
+
+    const fernCount = this.isMobile ? 44 : 68;
+    const lilyCount = this.isMobile ? 22 : 34;
+    const bioCount = this.isMobile ? 14 : 22;
+
+    this.mFernInst = new THREE.InstancedMesh(makeFernBushGeometry(3.3), vegMat, fernCount);
+    this.mLilyInst = new THREE.InstancedMesh(makeWaterLilyGeometry(7.1), vegMat, lilyCount);
+    this.mBioInst = new THREE.InstancedMesh(makeBioPlantGeometry(11.9), bioMat, bioCount);
+    this.mFernInst.frustumCulled = false;
+    this.mLilyInst.frustumCulled = false;
+    this.mBioInst.frustumCulled = false;
+    this.mangroveGroup.add(this.mFernInst, this.mLilyInst, this.mBioInst);
+
+    for (let i = 0; i < fernCount; i++) this.mFerns.push({ x: 0, z: 0, yaw: 0, scale: 1 });
+    for (let i = 0; i < lilyCount; i++) this.mLilies.push({ x: 0, z: 0, yaw: 0, scale: 1 });
+    for (let i = 0; i < bioCount; i++) this.mBios.push({ x: 0, z: 0, yaw: 0, scale: 1 });
+
+    // Fireflies (1 GPU draw call, independent organic drift + yellow-green #C9E88B twinkle)
+    this.fCount = this.isMobile ? 65 : 105;
+    this.fPos = new Float32Array(this.fCount * 3);
+    this.fSeed = new Float32Array(this.fCount * 3);
+    for (let i = 0; i < this.fCount; i++) {
+      this.fSeed[i * 3] = Math.random() * 62.8;
+      this.fSeed[i * 3 + 1] = 0.5 + Math.random() * 1.1;
+      this.fSeed[i * 3 + 2] = 0.55 + Math.random() * 0.75;
+    }
+    const fGeo = new THREE.BufferGeometry();
+    fGeo.setAttribute("position", new THREE.BufferAttribute(this.fPos, 3).setUsage(THREE.DynamicDrawUsage));
+    fGeo.setAttribute("aSeed", new THREE.BufferAttribute(this.fSeed, 3));
+    this.fMat = new THREE.ShaderMaterial({
+      uniforms: {
+        uTime: this.U.uTime,
+        uScale: { value: this.viewH * 0.85 },
+      },
+      transparent: true,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+      fog: false,
+      vertexShader: /* glsl */ `
+        uniform float uTime;
+        uniform float uScale;
+        attribute vec3 aSeed;
+        varying float vAlpha;
+        void main() {
+          float ph = aSeed.x;
+          float spd = aSeed.y;
+          vec3 p = position;
+          p.x += sin(uTime * spd * 0.85 + ph) * 1.45 + cos(uTime * spd * 0.37 + ph * 1.7) * 0.65;
+          p.y += sin(uTime * spd * 1.15 + ph * 2.1) * 0.55;
+          p.z += cos(uTime * spd * 0.75 + ph * 1.3) * 1.25;
+          vec4 mv = modelViewMatrix * vec4(p, 1.0);
+          float dist = max(-mv.z, 1.0);
+          float pulse = 0.25 + 0.75 * pow(0.5 + 0.5 * sin(uTime * (2.2 + spd) + ph * 3.0), 2.0);
+          float distFade = smoothstep(145.0, 22.0, dist);
+          vAlpha = pulse * distFade;
+          gl_PointSize = clamp((aSeed.z * 0.38 * uScale) / dist, 2.0, 28.0);
+          gl_Position = projectionMatrix * mv;
+        }
+      `,
+      fragmentShader: /* glsl */ `
+        varying float vAlpha;
+        void main() {
+          float r = length(gl_PointCoord - 0.5) * 2.0;
+          if (r > 1.0) discard;
+          float g = exp(-r * r * 3.8);
+          vec3 col = mix(vec3(0.79, 0.91, 0.55), vec3(1.0, 0.98, 0.82), smoothstep(0.45, 0.0, r));
+          gl_FragColor = vec4(col * g, g * vAlpha * 0.92);
+        }
+      `,
+    });
+    this.fireflies = new THREE.Points(fGeo, this.fMat);
+    this.fireflies.frustumCulled = false;
+    this.mangroveGroup.add(this.fireflies);
+
     this.mangroveGroup.visible = this.environment === "mangrove";
     this.scene.add(this.mangroveGroup);
     this.resetMangroveCorridor(0);
@@ -3197,10 +3326,65 @@ export class GameEngine {
     for (const inst of this.mTreeCanopyInst) inst.instanceMatrix.needsUpdate = true;
     for (const inst of this.mArchBarkInst) inst.instanceMatrix.needsUpdate = true;
     for (const inst of this.mArchCanopyInst) inst.instanceMatrix.needsUpdate = true;
+
+    // Scatter shoreline ferns, floating lily clusters, bioluminescent bank plants & fireflies
+    const d = this.mDummy;
+    this.mFerns.forEach((f, i) => {
+      const z = baseZ + 18 - (i / this.mFerns.length) * 225 - Math.random() * 4;
+      const side = Math.random() < 0.5 ? -1 : 1;
+      f.x = side * (16.4 + Math.random() * 5.8);
+      f.z = z;
+      f.yaw = Math.random() * Math.PI * 2;
+      f.scale = 0.85 + Math.random() * 0.75;
+      d.position.set(f.x, -0.05, f.z);
+      d.rotation.set(0, f.yaw, 0);
+      d.scale.setScalar(f.scale);
+      d.updateMatrix();
+      this.mFernInst.setMatrixAt(i, d.matrix);
+    });
+    this.mLilies.forEach((l, i) => {
+      const z = baseZ + 18 - (i / this.mLilies.length) * 200 - Math.random() * 5;
+      const side = Math.random() < 0.5 ? -1 : 1;
+      l.x = side * (12.8 + Math.random() * 4.5);
+      l.z = z;
+      l.yaw = Math.random() * Math.PI * 2;
+      l.scale = 0.8 + Math.random() * 0.65;
+      d.position.set(l.x, this.surf(l.x, l.z), l.z);
+      d.rotation.set(0, l.yaw, 0);
+      d.scale.setScalar(l.scale);
+      d.updateMatrix();
+      this.mLilyInst.setMatrixAt(i, d.matrix);
+    });
+    this.mBios.forEach((b, i) => {
+      const z = baseZ + 15 - (i / this.mBios.length) * 225 - Math.random() * 6;
+      const side = Math.random() < 0.5 ? -1 : 1;
+      b.x = side * (15.8 + Math.random() * 3.8);
+      b.z = z;
+      b.yaw = Math.random() * Math.PI * 2;
+      b.scale = 0.85 + Math.random() * 0.55;
+      d.position.set(b.x, 0.02, b.z);
+      d.rotation.set(0, b.yaw, 0);
+      d.scale.setScalar(b.scale);
+      d.updateMatrix();
+      this.mBioInst.setMatrixAt(i, d.matrix);
+    });
+    this.mFernInst.instanceMatrix.needsUpdate = true;
+    this.mLilyInst.instanceMatrix.needsUpdate = true;
+    this.mBioInst.instanceMatrix.needsUpdate = true;
+
+    for (let i = 0; i < this.fCount; i++) {
+      const side = Math.random() < 0.5 ? -1 : 1;
+      const nearWater = i % 3 === 0;
+      this.fPos[i * 3] = side * lerp(5.5, 20.5, Math.random());
+      this.fPos[i * 3 + 1] = nearWater ? lerp(0.5, 1.8, Math.random()) : lerp(2.0, 6.8, Math.random());
+      this.fPos[i * 3 + 2] = baseZ + 18 - Math.random() * 155;
+    }
+    if (this.fireflies) this.fireflies.geometry.getAttribute("position").needsUpdate = true;
   }
 
   private updateMangroveForest(bz: number) {
     const behind = bz + 34;
+    const d = this.mDummy;
     const dirtyTrees = new Array<boolean>(this.mTreeBarkInst.length).fill(false);
     for (const slot of this.mTrees) {
       if (slot.z > behind) {
@@ -3235,6 +3419,80 @@ export class GameEngine {
         this.mArchCanopyInst[a].instanceMatrix.needsUpdate = true;
       }
     }
+
+    // Recycle bank ferns
+    let fernDirty = false;
+    for (let i = 0; i < this.mFerns.length; i++) {
+      const f = this.mFerns[i];
+      if (f.z > behind) {
+        fernDirty = true;
+        const side = Math.random() < 0.5 ? -1 : 1;
+        f.x = side * (16.4 + Math.random() * 5.8);
+        f.z = bz - (170 + Math.random() * 55);
+        f.yaw = Math.random() * Math.PI * 2;
+        f.scale = 0.85 + Math.random() * 0.75;
+        d.position.set(f.x, -0.05, f.z);
+        d.rotation.set(0, f.yaw, 0);
+        d.scale.setScalar(f.scale);
+        d.updateMatrix();
+        this.mFernInst.setMatrixAt(i, d.matrix);
+      }
+    }
+    if (fernDirty) this.mFernInst.instanceMatrix.needsUpdate = true;
+
+    // Recycle & float water lilies gently on river surface
+    for (let i = 0; i < this.mLilies.length; i++) {
+      const l = this.mLilies[i];
+      if (l.z > behind) {
+        const side = Math.random() < 0.5 ? -1 : 1;
+        l.x = side * (12.8 + Math.random() * 4.5);
+        l.z = bz - (140 + Math.random() * 55);
+        l.yaw = Math.random() * Math.PI * 2;
+        l.scale = 0.8 + Math.random() * 0.65;
+      }
+      d.position.set(l.x, this.surf(l.x, l.z), l.z);
+      d.rotation.set(Math.sin(this.t * 1.1 + i) * 0.04, l.yaw, Math.cos(this.t * 0.9 + i) * 0.04);
+      d.scale.setScalar(l.scale);
+      d.updateMatrix();
+      this.mLilyInst.setMatrixAt(i, d.matrix);
+    }
+    this.mLilyInst.instanceMatrix.needsUpdate = true;
+
+    // Recycle sparse cyan-turquoise bioluminescent bank plants
+    let bioDirty = false;
+    for (let i = 0; i < this.mBios.length; i++) {
+      const b = this.mBios[i];
+      if (b.z > behind) {
+        bioDirty = true;
+        const side = Math.random() < 0.5 ? -1 : 1;
+        b.x = side * (15.8 + Math.random() * 3.8);
+        b.z = bz - (165 + Math.random() * 60);
+        b.yaw = Math.random() * Math.PI * 2;
+        b.scale = 0.85 + Math.random() * 0.55;
+        d.position.set(b.x, 0.02, b.z);
+        d.rotation.set(0, b.yaw, 0);
+        d.scale.setScalar(b.scale);
+        d.updateMatrix();
+        this.mBioInst.setMatrixAt(i, d.matrix);
+      }
+    }
+    if (bioDirty) this.mBioInst.instanceMatrix.needsUpdate = true;
+
+    // Wrap fireflies ahead of the boat
+    let fDirty = false;
+    const fBehind = bz + 20;
+    for (let i = 0; i < this.fCount; i++) {
+      const k = i * 3;
+      if (this.fPos[k + 2] > fBehind) {
+        fDirty = true;
+        const side = Math.random() < 0.5 ? -1 : 1;
+        const nearWater = i % 3 === 0;
+        this.fPos[k] = side * lerp(5.5, 20.5, Math.random());
+        this.fPos[k + 1] = nearWater ? lerp(0.5, 1.8, Math.random()) : lerp(2.0, 6.8, Math.random());
+        this.fPos[k + 2] = bz - (115 + Math.random() * 35);
+      }
+    }
+    if (fDirty) this.fireflies.geometry.getAttribute("position").needsUpdate = true;
   }
 
   private spawnShipwreck() {
@@ -3349,6 +3607,7 @@ export class GameEngine {
   private spawnRockAt(x: number, z: number, s: number) {
     const r = this.rocks.find((q) => !q.active);
     if (!r) return;
+    const isMangrove = this.environment === "mangrove";
     r.active = true;
     r.passed = false;
     r.x = x;
@@ -3356,9 +3615,20 @@ export class GameEngine {
     r.s = s;
     r.group.visible = true;
     r.group.position.set(x, 0, z);
-    r.body.rotation.y = Math.random() * Math.PI * 2;
+    const yaw = Math.random() * Math.PI * 2;
+    r.body.visible = !isMangrove;
+    r.snagBody.visible = isMangrove;
+    r.body.rotation.y = yaw;
     r.body.scale.set(s, s * (1.5 + Math.random() * 0.7), s);
     r.body.position.y = -0.25 * s;
+    r.snagBody.rotation.y = yaw;
+    r.snagBody.scale.set(s * 0.95, s * (0.95 + Math.random() * 0.35), s * 0.95);
+    r.snagBody.position.y = -0.15 * s;
+    (r.foam.material as THREE.MeshBasicMaterial).color.setRGB(
+      isMangrove ? 0.45 : 0.85,
+      isMangrove ? 0.75 : 0.94,
+      isMangrove ? 0.70 : 0.96,
+    );
     r.foam.scale.setScalar(s * 3.5);
     r.foam.rotation.y = Math.random() * 6;
   }
@@ -3401,6 +3671,23 @@ export class GameEngine {
   private spawnMine(d: number) {
     const m = this.mines.find((q) => !q.active);
     if (!m) return;
+    const isMangrove = this.environment === "mangrove";
+    const applyMineVisuals = (target: Mine) => {
+      target.shellBody.visible = !isMangrove;
+      target.tangleBody.visible = isMangrove;
+      target.beacon.color.setHex(isMangrove ? 0x43e6c1 : 0xff1a10);
+      target.beacon.emissive.setRGB(
+        isMangrove ? 0.26 : 1.0,
+        isMangrove ? 0.90 : 0.15,
+        isMangrove ? 0.76 : 0.08,
+      );
+      (target.halo.material as THREE.SpriteMaterial).color.setRGB(
+        isMangrove ? 0.26 : 1.0,
+        isMangrove ? 0.90 : 0.18,
+        isMangrove ? 0.76 : 0.10,
+      );
+    };
+
     const z = this.boat.position.z - (100 + Math.random() * 28);
     const x = clamp(
       this.boat.position.x + (Math.random() - 0.5) * 20,
@@ -3412,10 +3699,16 @@ export class GameEngine {
     m.x = x;
     m.z = z;
     m.phase = Math.random() * 10;
+    applyMineVisuals(m);
     m.group.visible = true;
     if (!this.mineAlertShown) {
       this.mineAlertShown = true;
-      this.cb.onAlert({ text: "Sea mines — keep clear of red beacons", tone: "warn" });
+      this.cb.onAlert({
+        text: isMangrove
+          ? "Tangled root hazards — keep clear of spore pods"
+          : "Sea mines — keep clear of red beacons",
+        tone: "warn",
+      });
       this.audio.warn();
     }
     // high-risk pairing later in the run
@@ -3427,6 +3720,7 @@ export class GameEngine {
         m2.x = clamp(x + (x > 0 ? -7.5 : 7.5), -STEER_RANGE + 1.5, STEER_RANGE - 1.5);
         m2.z = z - 8;
         m2.phase = Math.random() * 10;
+        applyMineVisuals(m2);
         m2.group.visible = true;
       }
     }
@@ -4226,7 +4520,7 @@ export class GameEngine {
           this.logTimer = lerp(6.8, 3.2, d) + Math.random() * 2.2;
         }
       }
-      if (this.runTime > tune.waveUnlock) {
+      if (!isMangrove && this.runTime > tune.waveUnlock) {
         this.waveTimer -= dt;
         if (this.waveTimer <= 0) {
           this.spawnRogueWave(d);
@@ -4639,6 +4933,7 @@ export class GameEngine {
     this.pMat.uniforms.uScale.value =
       (this.viewH / (2 * Math.tan(THREE.MathUtils.degToRad(cam.fov) / 2))) *
       this.renderer.getPixelRatio();
+    if (this.fMat) this.fMat.uniforms.uScale.value = this.pMat.uniforms.uScale.value;
 
     // ---------- scenery & uniforms ----------
     this.waterMesh.position.set(bx, 0, bz - 4);
@@ -4651,6 +4946,26 @@ export class GameEngine {
       }
     } else {
       this.updateMangroveForest(bz);
+      if (!over) {
+        this.mPollenTimer -= dt;
+        if (this.mPollenTimer <= 0) {
+          this.mPollenTimer = this.isMobile ? 0.14 : 0.08;
+          const isLeaf = Math.random() < 0.35;
+          this.emit(
+            bx + (Math.random() - 0.5) * 32,
+            lerp(2.2, 8.5, Math.random()),
+            bz - 10 - Math.random() * 65,
+            (Math.random() - 0.5) * 0.9,
+            isLeaf ? -0.55 - Math.random() * 0.4 : -0.15 - Math.random() * 0.2,
+            (Math.random() - 0.5) * 0.7,
+            isLeaf ? new THREE.Color("#295c38") : new THREE.Color("#b4d4c2"),
+            isLeaf ? 0.16 + Math.random() * 0.12 : 0.07 + Math.random() * 0.06,
+            isLeaf ? 2.6 : 2.0,
+            0.12,
+            0.6,
+          );
+        }
+      }
     }
     boat.updateMatrixWorld();
     this.gatherGlows(bz, lampLevel);
@@ -4688,8 +5003,24 @@ export class GameEngine {
     for (const m of this.mines) {
       if (m.active && n < this.NG && Math.abs(m.z - bz) < 60) {
         pos[n].set(m.x, m.group.position.y + 1.0, m.z, 0.85);
-        col[n].set(1.0, 0.16, 0.12);
+        col[n].set(
+          isMangrove ? 0.26 : 1.0,
+          isMangrove ? 0.90 : 0.16,
+          isMangrove ? 0.76 : 0.12,
+        );
         n++;
+      }
+    }
+    if (isMangrove) {
+      let bioAdded = 0;
+      for (const b of this.mBios) {
+        if (bioAdded >= 2 || n >= this.NG) break;
+        if (b.z < bz + 12 && b.z > bz - 65) {
+          pos[n].set(b.x, 0.7, b.z, 1.35);
+          col[n].set(0.26, 0.90, 0.76);
+          n++;
+          bioAdded++;
+        }
       }
     }
     for (const b of this.buoys) {

@@ -508,3 +508,243 @@ export function getMangroveCorridorParams(distMeters: number): MangroveCorridorP
     scaleMax: 1.18,
   };
 }
+
+/** Build a single curved, tapered botanical leaf frond along a radial direction. */
+function buildLeafBladeGeo(
+  angle: number,
+  length: number,
+  width: number,
+  archHeight: number,
+  droopY: number,
+  baseCol: [number, number, number],
+  tipCol: [number, number, number],
+): THREE.BufferGeometry {
+  const segs = 5;
+  const pos: number[] = [];
+  const col: number[] = [];
+  const uv: number[] = [];
+  const idx: number[] = [];
+
+  const cosA = Math.cos(angle);
+  const sinA = Math.sin(angle);
+  const px = -sinA;
+  const pz = cosA;
+
+  for (let i = 0; i <= segs; i++) {
+    const t = i / segs;
+    const r = t * length;
+    const y = Math.sin(t * Math.PI * 0.85) * archHeight + t * t * droopY;
+    const w = Math.sin(Math.pow(t, 0.72) * Math.PI) * width * 0.5 + (i === 0 ? 0.03 : 0);
+
+    const cx = cosA * r;
+    const cz = sinA * r;
+    const cr = lerp(baseCol[0], tipCol[0], t);
+    const cg = lerp(baseCol[1], tipCol[1], t);
+    const cb = lerp(baseCol[2], tipCol[2], t);
+
+    // Left, center midrib (slightly raised), right
+    pos.push(cx - px * w, y - 0.03 * w, cz - pz * w);
+    pos.push(cx, y + 0.05 * w, cz);
+    pos.push(cx + px * w, y - 0.03 * w, cz + pz * w);
+
+    for (let k = 0; k < 3; k++) {
+      col.push(cr, cg, cb);
+      uv.push(k * 0.5, t);
+    }
+
+    if (i < segs) {
+      const a = i * 3;
+      const b = (i + 1) * 3;
+      idx.push(a, b, a + 1, a + 1, b, b + 1);
+      idx.push(a + 1, b + 1, a + 2, a + 2, b + 1, b + 2);
+    }
+  }
+
+  const g = new THREE.BufferGeometry();
+  g.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute("color", new THREE.Float32BufferAttribute(col, 3));
+  g.setAttribute("uv", new THREE.Float32BufferAttribute(uv, 2));
+  g.setIndex(idx);
+  const nonIdx = g.toNonIndexed();
+  g.dispose();
+  nonIdx.computeVertexNormals();
+  return nonIdx;
+}
+
+/** Multi-frond tropical shoreline fern / broad-leaf cluster (#123D2A). */
+export function makeFernBushGeometry(seed = 1.7): THREE.BufferGeometry {
+  const rnd = seededRand(seed);
+  const parts: THREE.BufferGeometry[] = [];
+  const fronds = 9;
+  for (let i = 0; i < fronds; i++) {
+    const ang = (i / fronds) * Math.PI * 2 + (rnd() - 0.5) * 0.25;
+    const tier = i % 2;
+    const len = (tier === 0 ? 1.55 : 1.15) + rnd() * 0.45;
+    const w = 0.42 + rnd() * 0.16;
+    const arch = tier === 0 ? 0.55 + rnd() * 0.2 : 0.85 + rnd() * 0.25;
+    const droop = tier === 0 ? -0.35 : -0.15;
+    parts.push(
+      buildLeafBladeGeo(ang, len, w, arch, droop, [0.04, 0.14, 0.09], [0.11, 0.34, 0.21]),
+    );
+  }
+  const merged = mergeGeometries(parts, false);
+  for (const p of parts) p.dispose();
+  return merged;
+}
+
+/** Cluster of notched floating water lily pads & a pale lotus bud. */
+export function makeWaterLilyGeometry(seed = 4.2): THREE.BufferGeometry {
+  const rnd = seededRand(seed);
+  const parts: THREE.BufferGeometry[] = [];
+  const pads = 4;
+  for (let i = 0; i < pads; i++) {
+    const r = 0.34 + rnd() * 0.28;
+    const notchStart = rnd() * Math.PI * 2;
+    const pad = new THREE.CircleGeometry(r, 14, notchStart, Math.PI * 1.82).toNonIndexed();
+    pad.rotateX(-Math.PI / 2);
+
+    const pos = pad.getAttribute("position") as THREE.BufferAttribute;
+    const col = new Float32Array(pos.count * 3);
+    const ox = (rnd() - 0.5) * 1.15;
+    const oz = (rnd() - 0.5) * 1.15;
+    const shade = 0.78 + rnd() * 0.35;
+
+    for (let k = 0; k < pos.count; k++) {
+      const px = pos.getX(k);
+      const pz = pos.getZ(k);
+      const radial = clamp(Math.hypot(px, pz) / r, 0, 1);
+      // Slight upturned edge curl on the lily pad rim
+      pos.setXYZ(k, px + ox, 0.04 + Math.pow(radial, 3) * 0.035, pz + oz);
+      col[k * 3] = lerp(0.05, 0.13, radial) * shade;
+      col[k * 3 + 1] = lerp(0.20, 0.36, radial) * shade;
+      col[k * 3 + 2] = lerp(0.11, 0.18, radial) * shade;
+    }
+    pad.setAttribute("color", new THREE.BufferAttribute(col, 3));
+    pad.computeVertexNormals();
+    parts.push(pad);
+  }
+
+  // Subtle closed water-lily bud nestled among the pads
+  const bud = new THREE.ConeGeometry(0.075, 0.22, 6).toNonIndexed();
+  bud.translate(0.1, 0.14, 0.05);
+  const bPos = bud.getAttribute("position") as THREE.BufferAttribute;
+  const bCol = new Float32Array(bPos.count * 3);
+  for (let k = 0; k < bPos.count; k++) {
+    const y = bPos.getY(k);
+    const tip = clamp((y - 0.03) / 0.22, 0, 1);
+    bCol[k * 3] = lerp(0.25, 0.68, tip);
+    bCol[k * 3 + 1] = lerp(0.45, 0.78, tip);
+    bCol[k * 3 + 2] = lerp(0.32, 0.65, tip);
+  }
+  bud.setAttribute("color", new THREE.BufferAttribute(bCol, 3));
+  bud.computeVertexNormals();
+  parts.push(bud);
+
+  const merged = mergeGeometries(parts, false);
+  for (const p of parts) p.dispose();
+  return merged;
+}
+
+/** Delicate riverbank bioluminescent foliage spray glowing softly cyan-turquoise (#43E6C1). */
+export function makeBioPlantGeometry(seed = 9.1): THREE.BufferGeometry {
+  const rnd = seededRand(seed);
+  const parts: THREE.BufferGeometry[] = [];
+  const blades = 7;
+  for (let i = 0; i < blades; i++) {
+    const ang = (i / blades) * Math.PI * 2 + (rnd() - 0.5) * 0.3;
+    parts.push(
+      buildLeafBladeGeo(
+        ang,
+        0.95 + rnd() * 0.45,
+        0.24 + rnd() * 0.08,
+        0.65 + rnd() * 0.35,
+        -0.12,
+        [0.04, 0.20, 0.18],
+        [0.26, 0.90, 0.76], // #43E6C1 luminous leaf tips
+      ),
+    );
+  }
+  const merged = mergeGeometries(parts, false);
+  for (const p of parts) p.dispose();
+  return merged;
+}
+
+/** Exposed river-channel mangrove root snag hazard (replaces ocean rocks in Mangrove mode). */
+export function makeRootSnagGeometry(seed = 15.7): THREE.BufferGeometry {
+  const rnd = seededRand(seed);
+  const parts: THREE.BufferGeometry[] = [];
+
+  // Stump core
+  parts.push(
+    buildTaperedBranchGeo(
+      [
+        new THREE.Vector3(0, -1.2, 0),
+        new THREE.Vector3((rnd() - 0.5) * 0.3, 0.4, (rnd() - 0.5) * 0.3),
+        new THREE.Vector3((rnd() - 0.5) * 0.5, 1.35 + rnd() * 0.45, (rnd() - 0.5) * 0.4),
+      ],
+      0.42,
+      0.14,
+      6,
+      6,
+      (v) => {
+        const top = clamp((v.y - 0.3) / 1.2, 0, 1);
+        return [lerp(0.10, 0.36, top), lerp(0.14, 0.29, top), lerp(0.10, 0.23, top)];
+      },
+    ),
+  );
+
+  // 4 arching knees rising clearly above the dark river surface
+  for (let i = 0; i < 4; i++) {
+    const a = (i / 4) * Math.PI * 2 + rnd() * 0.5;
+    const rad = 0.75 + rnd() * 0.45;
+    const peak = 0.75 + rnd() * 0.65;
+    parts.push(
+      buildTaperedBranchGeo(
+        [
+          new THREE.Vector3(Math.cos(a) * 0.15, 0.2, Math.sin(a) * 0.15),
+          new THREE.Vector3(Math.cos(a) * rad * 0.55, peak, Math.sin(a) * rad * 0.55),
+          new THREE.Vector3(Math.cos(a) * rad, -1.0, Math.sin(a) * rad),
+        ],
+        0.16,
+        0.09,
+        6,
+        5,
+        (v) => {
+          const rim = clamp((v.y - 0.25) / 0.85, 0, 1);
+          return [lerp(0.08, 0.34, rim), lerp(0.13, 0.28, rim), lerp(0.09, 0.22, rim)];
+        },
+      ),
+    );
+  }
+
+  const merged = mergeGeometries(parts, false);
+  for (const p of parts) p.dispose();
+  return merged;
+}
+
+/** Floating tangled mangrove root & vegetation clump geometry (replaces sea mine iron sphere). */
+export function makeTangledHazardGeometry(seed = 21.3): THREE.BufferGeometry {
+  const rnd = seededRand(seed);
+  const parts: THREE.BufferGeometry[] = [];
+  for (let i = 0; i < 5; i++) {
+    const a = (i / 5) * Math.PI * 2 + rnd() * 0.4;
+    const r = 0.5 + rnd() * 0.35;
+    parts.push(
+      buildTaperedBranchGeo(
+        [
+          new THREE.Vector3(Math.cos(a) * r, -0.45, Math.sin(a) * r),
+          new THREE.Vector3(Math.cos(a + 0.7) * r * 0.55, 0.35 + rnd() * 0.35, Math.sin(a + 0.7) * r * 0.55),
+          new THREE.Vector3(-Math.cos(a) * r * 0.85, -0.35, -Math.sin(a) * r * 0.85),
+        ],
+        0.13,
+        0.07,
+        6,
+        5,
+        () => [0.22, 0.20, 0.15],
+      ),
+    );
+  }
+  const merged = mergeGeometries(parts, false);
+  for (const p of parts) p.dispose();
+  return merged;
+}
