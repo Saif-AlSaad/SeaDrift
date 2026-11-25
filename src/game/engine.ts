@@ -28,6 +28,12 @@ import {
   makeShipwreckGroup,
   makeBellBuoyGroup,
 } from "./scenery";
+import {
+  getMangroveCorridorParams,
+  makeMangroveArchGeometry,
+  makeMangroveArchetype,
+  makeMangroveBarkTexture,
+} from "./mangrove";
 
 export type GameState = "menu" | "playing" | "paused" | "gameover";
 
@@ -446,6 +452,29 @@ interface BellBuoy {
   phase: number;
 }
 
+interface MangroveSlot {
+  variant: number;
+  instIdx: number;
+  side: -1 | 1;
+  isOuter: boolean;
+  x: number;
+  z: number;
+  yaw: number;
+  sx: number;
+  sy: number;
+  sz: number;
+}
+
+interface MangroveArchSlot {
+  variant: number;
+  instIdx: number;
+  side: -1 | 1;
+  x: number;
+  z: number;
+  yaw: number;
+  scale: number;
+}
+
 interface AtmosphereConfig {
   name: string;
   horizon: THREE.Color;
@@ -717,6 +746,18 @@ export class GameEngine {
   private shipwreckTimer = 14;
   private buoyTimer = 18;
 
+  // Enchanted Mangrove forest corridor (instanced for 60 FPS)
+  private mangroveGroup = new THREE.Group();
+  private mTreeBarkInst: THREE.InstancedMesh[] = [];
+  private mTreeCanopyInst: THREE.InstancedMesh[] = [];
+  private mArchBarkInst: THREE.InstancedMesh[] = [];
+  private mArchCanopyInst: THREE.InstancedMesh[] = [];
+  private mTrees: MangroveSlot[] = [];
+  private mArches: MangroveArchSlot[] = [];
+  private mDummy = new THREE.Object3D();
+  private mNextTreeZ = 20;
+  private mNextArchZ = -10;
+
   // boat
   private boat!: THREE.Group;
   private rig!: THREE.Group;
@@ -946,6 +987,7 @@ export class GameEngine {
     this.buildParticles();
     this.buildWeather();
     this.buildBiomes();
+    this.buildMangroveForest();
     this.buildComposer(w, h);
     this.applySettings(initialSettings);
 
@@ -994,6 +1036,10 @@ export class GameEngine {
     const isMangrove = this.environment === "mangrove";
     for (const isle of this.islands) {
       isle.visible = !isMangrove;
+    }
+    this.mangroveGroup.visible = isMangrove;
+    if (isMangrove && this.mTrees.length) {
+      this.resetMangroveCorridor(this.boat?.position.z ?? 0);
     }
     if (isMangrove) {
       this.sun.position.copy(moonDir()).multiplyScalar(200);
@@ -1111,6 +1157,9 @@ export class GameEngine {
     for (const isle of this.islands) isle.position.z += sz;
     this.resetFishPositions(0, 0);
     this.boat.position.set(0, this.boat.position.y, 0);
+    if (this.environment === "mangrove" && this.mTrees.length) {
+      this.resetMangroveCorridor(0);
+    }
     this.boatY = this.surf(0, 0);
     this.boatVy = 0;
     this.vxSmooth = 0;
@@ -2997,6 +3046,197 @@ export class GameEngine {
     }
   }
 
+  private buildMangroveForest() {
+    const barkTex = makeMangroveBarkTexture();
+    const barkMat = new THREE.MeshStandardMaterial({
+      map: barkTex,
+      bumpMap: barkTex,
+      bumpScale: 0.28,
+      vertexColors: true,
+      roughness: 0.78,
+      metalness: 0.05,
+    });
+    const canopyMat = new THREE.MeshStandardMaterial({
+      vertexColors: true,
+      roughness: 0.74,
+      metalness: 0.04,
+    });
+
+    const TREE_VARIANTS = 4;
+    const perVariant = this.isMobile ? 16 : 22; // 64 or 88 trees across 8 draw calls
+    const ARCH_VARIANTS = 2;
+    const archesPerVariant = this.isMobile ? 6 : 8; // 12 or 16 high root arches across 4 draw calls
+
+    for (let v = 0; v < TREE_VARIANTS; v++) {
+      const arch = makeMangroveArchetype(11.3 + v * 19.7);
+      const bInst = new THREE.InstancedMesh(arch.barkGeo, barkMat, perVariant);
+      const cInst = new THREE.InstancedMesh(arch.canopyGeo, canopyMat, perVariant);
+      bInst.frustumCulled = false;
+      cInst.frustumCulled = false;
+      this.mTreeBarkInst.push(bInst);
+      this.mTreeCanopyInst.push(cInst);
+      this.mangroveGroup.add(bInst, cInst);
+
+      for (let i = 0; i < perVariant; i++) {
+        this.mTrees.push({
+          variant: v,
+          instIdx: i,
+          side: (i + v) % 2 === 0 ? -1 : 1,
+          isOuter: i >= Math.floor(perVariant * 0.62),
+          x: 0,
+          z: 0,
+          yaw: 0,
+          sx: 1,
+          sy: 1,
+          sz: 1,
+        });
+      }
+    }
+
+    for (let a = 0; a < ARCH_VARIANTS; a++) {
+      const archGeo = makeMangroveArchGeometry(53.1 + a * 29.3);
+      const abInst = new THREE.InstancedMesh(archGeo.barkGeo, barkMat, archesPerVariant);
+      const acInst = new THREE.InstancedMesh(archGeo.canopyGeo, canopyMat, archesPerVariant);
+      abInst.frustumCulled = false;
+      acInst.frustumCulled = false;
+      this.mArchBarkInst.push(abInst);
+      this.mArchCanopyInst.push(acInst);
+      this.mangroveGroup.add(abInst, acInst);
+
+      for (let i = 0; i < archesPerVariant; i++) {
+        this.mArches.push({
+          variant: a,
+          instIdx: i,
+          side: (i + a) % 2 === 0 ? -1 : 1,
+          x: 0,
+          z: 0,
+          yaw: 0,
+          scale: 1,
+        });
+      }
+    }
+
+    this.mangroveGroup.visible = this.environment === "mangrove";
+    this.scene.add(this.mangroveGroup);
+    this.resetMangroveCorridor(0);
+  }
+
+  private placeMangroveSlot(slot: MangroveSlot, z: number, dirtyMask?: boolean[]) {
+    const distMeters = Math.max(0, Math.floor(-z / 10));
+    const p = getMangroveCorridorParams(distMeters);
+    const sx = lerp(p.scaleMin, p.scaleMax, Math.random());
+    const sy = sx * (0.9 + Math.random() * 0.25);
+    const sz = sx * (0.9 + Math.random() * 0.2);
+
+    // Keep inner prop roots (<= 2.0 * sx local reach) strictly clear of STEER_RANGE (15)
+    const minBank = Math.max(p.innerMinX, 16.8 + 2.0 * sx);
+    const distX = slot.isOuter
+      ? lerp(p.innerMaxX + 2.0, p.innerMaxX + 14.5, Math.random())
+      : lerp(minBank, Math.max(minBank + 2.5, p.innerMaxX), Math.random());
+
+    slot.side = Math.random() < 0.5 ? -1 : 1;
+    slot.x = slot.side * distX;
+    slot.z = z;
+    slot.sx = sx;
+    slot.sy = sy;
+    slot.sz = sz;
+    slot.yaw = (slot.side === -1 ? 0 : Math.PI) + (Math.random() - 0.5) * 0.65;
+
+    const d = this.mDummy;
+    d.position.set(slot.x, -0.1, slot.z);
+    d.rotation.set(0, slot.yaw, 0);
+    d.scale.set(slot.sx, slot.sy, slot.sz);
+    d.updateMatrix();
+    this.mTreeBarkInst[slot.variant].setMatrixAt(slot.instIdx, d.matrix);
+    this.mTreeCanopyInst[slot.variant].setMatrixAt(slot.instIdx, d.matrix);
+    if (dirtyMask) dirtyMask[slot.variant] = true;
+  }
+
+  private placeMangroveArch(arch: MangroveArchSlot, z: number, dirtyMask?: boolean[]) {
+    const distMeters = Math.max(0, Math.floor(-z / 10));
+    const p = getMangroveCorridorParams(distMeters);
+    const scale = lerp(0.95, 1.25, Math.random());
+    arch.side = Math.random() < 0.5 ? -1 : 1;
+    arch.x = arch.side * (p.innerMinX + 1.0 + Math.random() * 2.5);
+    arch.z = z;
+    arch.scale = scale;
+    arch.yaw = (arch.side === -1 ? 0 : Math.PI) + (Math.random() - 0.5) * 0.3;
+
+    const d = this.mDummy;
+    d.position.set(arch.x, -0.2, arch.z);
+    d.rotation.set(0, arch.yaw, 0);
+    d.scale.setScalar(scale);
+    d.updateMatrix();
+    this.mArchBarkInst[arch.variant].setMatrixAt(arch.instIdx, d.matrix);
+    this.mArchCanopyInst[arch.variant].setMatrixAt(arch.instIdx, d.matrix);
+    if (dirtyMask) dirtyMask[arch.variant] = true;
+  }
+
+  private resetMangroveCorridor(baseZ: number) {
+    let cursorZ = baseZ + 22;
+    for (let i = 0; i < this.mTrees.length; i++) {
+      const slot = this.mTrees[i];
+      const distMeters = Math.max(0, Math.floor(-cursorZ / 10));
+      const p = getMangroveCorridorParams(distMeters);
+      this.placeMangroveSlot(slot, cursorZ - Math.random() * 2.5);
+      cursorZ -= p.spacing * (slot.isOuter ? 0.45 : 0.62);
+    }
+    this.mNextTreeZ = cursorZ;
+
+    let archCursorZ = baseZ - 14;
+    for (let i = 0; i < this.mArches.length; i++) {
+      const arch = this.mArches[i];
+      const distMeters = Math.max(0, Math.floor(-archCursorZ / 10));
+      const p = getMangroveCorridorParams(distMeters);
+      this.placeMangroveArch(arch, archCursorZ);
+      archCursorZ -= lerp(24, 13, clamp((p.archChance - 0.14) / 0.35, 0, 1)) + Math.random() * 8;
+    }
+    this.mNextArchZ = archCursorZ;
+
+    for (const inst of this.mTreeBarkInst) inst.instanceMatrix.needsUpdate = true;
+    for (const inst of this.mTreeCanopyInst) inst.instanceMatrix.needsUpdate = true;
+    for (const inst of this.mArchBarkInst) inst.instanceMatrix.needsUpdate = true;
+    for (const inst of this.mArchCanopyInst) inst.instanceMatrix.needsUpdate = true;
+  }
+
+  private updateMangroveForest(bz: number) {
+    const behind = bz + 34;
+    const dirtyTrees = new Array<boolean>(this.mTreeBarkInst.length).fill(false);
+    for (const slot of this.mTrees) {
+      if (slot.z > behind) {
+        const distMeters = Math.max(0, Math.floor(-this.mNextTreeZ / 10));
+        const p = getMangroveCorridorParams(distMeters);
+        const z = Math.min(this.mNextTreeZ, bz - 195);
+        this.placeMangroveSlot(slot, z - Math.random() * 2.5, dirtyTrees);
+        this.mNextTreeZ = z - p.spacing * (slot.isOuter ? 0.45 : 0.62);
+      }
+    }
+    for (let v = 0; v < dirtyTrees.length; v++) {
+      if (dirtyTrees[v]) {
+        this.mTreeBarkInst[v].instanceMatrix.needsUpdate = true;
+        this.mTreeCanopyInst[v].instanceMatrix.needsUpdate = true;
+      }
+    }
+
+    const dirtyArches = new Array<boolean>(this.mArchBarkInst.length).fill(false);
+    for (const arch of this.mArches) {
+      if (arch.z > behind) {
+        const distMeters = Math.max(0, Math.floor(-this.mNextArchZ / 10));
+        const p = getMangroveCorridorParams(distMeters);
+        const z = Math.min(this.mNextArchZ, bz - 195);
+        this.placeMangroveArch(arch, z, dirtyArches);
+        this.mNextArchZ =
+          z - (lerp(24, 13, clamp((p.archChance - 0.14) / 0.35, 0, 1)) + Math.random() * 8);
+      }
+    }
+    for (let a = 0; a < dirtyArches.length; a++) {
+      if (dirtyArches[a]) {
+        this.mArchBarkInst[a].instanceMatrix.needsUpdate = true;
+        this.mArchCanopyInst[a].instanceMatrix.needsUpdate = true;
+      }
+    }
+  }
+
   private spawnShipwreck() {
     const s = this.shipwrecks.find((q) => !q.active);
     if (!s) return;
@@ -4409,6 +4649,8 @@ export class GameEngine {
       for (const isle of this.islands) {
         if (isle.position.z > bz - 120) this.recycleIsland(isle);
       }
+    } else {
+      this.updateMangroveForest(bz);
     }
     boat.updateMatrixWorld();
     this.gatherGlows(bz, lampLevel);
