@@ -235,17 +235,21 @@ uniform vec3 uZenith;
 uniform vec3 uHaze;
 uniform vec3 uSunColor;
 uniform vec3 uSunDir;
+uniform vec3 uMoonDir;
 uniform float uSunGlare;
 uniform float uStorm;
 uniform float uFlash;
+uniform float uMangrove;
 vec3 skyColor(vec3 d) {
   float y = max(d.y, 0.0);
   float s = max(dot(d, uSunDir), 0.0);
+  float m = max(dot(d, uMoonDir), 0.0);
   float hz = 1.0 - smoothstep(0.0, 0.34, y);
   vec3 warm = mix(uHaze, uHorizon, pow(s, 1.8));
   vec3 col = mix(warm, uMid, smoothstep(0.0, 0.2, y));
   col = mix(col, uZenith, smoothstep(0.08, 0.62, y));
-  col += uSunColor * (pow(s, 9.0) * 0.21 * hz + pow(s, 72.0) * 0.34) * uSunGlare;
+  col += uSunColor * (pow(s, 9.0) * 0.21 * hz + pow(s, 72.0) * 0.34) * uSunGlare * (1.0 - uMangrove);
+  col += uSunColor * (pow(m, 14.0) * 0.14 + pow(m, 90.0) * 0.24) * uMangrove * (0.4 + 0.6 * uSunGlare);
   col = mix(col, mix(col, vec3(dot(col, vec3(0.3, 0.5, 0.2))), 0.6) * 0.24 + vec3(0.010, 0.015, 0.019), uStorm * 0.85);
   col += uFlash * vec3(0.10, 0.13, 0.2);
   return col;
@@ -442,7 +446,24 @@ interface BellBuoy {
   phase: number;
 }
 
-const BIOMES = {
+interface AtmosphereConfig {
+  name: string;
+  horizon: THREE.Color;
+  mid: THREE.Color;
+  zenith: THREE.Color;
+  haze: THREE.Color;
+  sunColor: THREE.Color;
+  sunGlare: number;
+  starBoost: number;
+  deep: THREE.Color;
+  scatter: THREE.Color;
+  fogDensity: number;
+  fogColor: THREE.Color;
+  hemiInt: number;
+  sunInt: number;
+}
+
+const BIOMES: Record<"dusk" | "abyss" | "graveyard", AtmosphereConfig> = {
   dusk: {
     name: "Dusk Shallows",
     horizon: new THREE.Color("#e88448"),
@@ -492,6 +513,89 @@ const BIOMES = {
     sunInt: 0.40,
   },
 };
+
+const MANGROVE_AREAS: Record<"entrance" | "passage" | "grove" | "ancient", AtmosphereConfig> = {
+  entrance: {
+    name: "Forest Entrance",
+    horizon: new THREE.Color("#0d3036"),
+    mid: new THREE.Color("#071c25"),
+    zenith: new THREE.Color("#030c14"),
+    haze: new THREE.Color("#0b282e"),
+    sunColor: new THREE.Color("#a8c9d2"),
+    sunGlare: 0.30,
+    starBoost: 0.7,
+    deep: new THREE.Color("#062D2B"),
+    scatter: new THREE.Color("#155D55"),
+    fogDensity: 0.0085,
+    fogColor: new THREE.Color("#071C25"),
+    hemiInt: 0.44,
+    sunInt: 0.78,
+  },
+  passage: {
+    name: "Dense Mangrove Passage",
+    horizon: new THREE.Color("#082026"),
+    mid: new THREE.Color("#05141c"),
+    zenith: new THREE.Color("#02080e"),
+    haze: new THREE.Color("#071a20"),
+    sunColor: new THREE.Color("#93b8c4"),
+    sunGlare: 0.18,
+    starBoost: 0.45,
+    deep: new THREE.Color("#042120"),
+    scatter: new THREE.Color("#104c46"),
+    fogDensity: 0.0122,
+    fogColor: new THREE.Color("#06161e"),
+    hemiInt: 0.34,
+    sunInt: 0.52,
+  },
+  grove: {
+    name: "Bioluminescent Grove",
+    horizon: new THREE.Color("#0b2c32"),
+    mid: new THREE.Color("#061b24"),
+    zenith: new THREE.Color("#020b12"),
+    haze: new THREE.Color("#0a252a"),
+    sunColor: new THREE.Color("#9ec9d4"),
+    sunGlare: 0.24,
+    starBoost: 0.65,
+    deep: new THREE.Color("#052827"),
+    scatter: new THREE.Color("#196d62"),
+    fogDensity: 0.0102,
+    fogColor: new THREE.Color("#071f26"),
+    hemiInt: 0.42,
+    sunInt: 0.64,
+  },
+  ancient: {
+    name: "Ancient Mangrove",
+    horizon: new THREE.Color("#06191f"),
+    mid: new THREE.Color("#031017"),
+    zenith: new THREE.Color("#01060b"),
+    haze: new THREE.Color("#051419"),
+    sunColor: new THREE.Color("#85aab7"),
+    sunGlare: 0.14,
+    starBoost: 0.35,
+    deep: new THREE.Color("#031919"),
+    scatter: new THREE.Color("#0e433d"),
+    fogDensity: 0.0145,
+    fogColor: new THREE.Color("#051319"),
+    hemiInt: 0.30,
+    sunInt: 0.44,
+  },
+};
+
+function resolveAreaKey(env: EnvironmentMode, distMeters: number): { key: string; cfg: AtmosphereConfig } {
+  if (env === "mangrove") {
+    const key =
+      distMeters >= 850
+        ? "ancient"
+        : distMeters >= 550
+          ? "grove"
+          : distMeters >= 250
+            ? "passage"
+            : "entrance";
+    return { key, cfg: MANGROVE_AREAS[key] };
+  }
+  const key = distMeters >= 700 ? "graveyard" : distMeters >= 400 ? "abyss" : "dusk";
+  return { key, cfg: BIOMES[key] };
+}
 
 interface Strike {
   x: number;
@@ -579,7 +683,9 @@ export class GameEngine {
     uFlash: { value: 0 },
     uSunGlare: { value: 1.0 },
     uStarBoost: { value: 1.0 },
+    uMangrove: { value: 0.0 },
     uSunDir: { value: sunDir() },
+    uMoonDir: { value: moonDir() },
     uSunColor: { value: new THREE.Color("#f4ad6c") },
     uHorizon: { value: new THREE.Color("#e88448") },
     uMid: { value: new THREE.Color("#856876") },
@@ -596,9 +702,10 @@ export class GameEngine {
   private uFishTime = { value: 0 };
   private uDeepColor = new THREE.Color("#08323f");
   private uScatterColor = new THREE.Color("#1ea49c");
+  private sunGlareMult = 1.0;
 
   // Biomes & Lighthouse Haven
-  private currentBiome: "dusk" | "abyss" | "graveyard" = "dusk";
+  private currentBiome = "dusk";
   private currentBiomeName = "Dusk Shallows";
   private lastBiomeAnnounced = "dusk";
   private lastLighthouseTriggered = 0;
@@ -882,14 +989,64 @@ export class GameEngine {
     this.modalOpen = open;
   }
 
+  /** Snap or sync sky, lighting, islands, and zone state for the active environment mode. */
+  private syncEnvironmentVisuals(snapAtmosphere: boolean) {
+    const isMangrove = this.environment === "mangrove";
+    for (const isle of this.islands) {
+      isle.visible = !isMangrove;
+    }
+    if (isMangrove) {
+      this.sun.position.copy(moonDir()).multiplyScalar(200);
+      this.sun.color.set("#a8c9d2");
+      this.hemi.color.set("#5c8f99");
+      this.hemi.groundColor.set("#051a19");
+      if (this.lighthouse) this.lighthouse.visible = false;
+    } else {
+      this.sun.position.copy(sunDir()).multiplyScalar(200);
+      this.sun.color.set("#f6aa68");
+      this.hemi.color.set("#8fa9bd");
+      this.hemi.groundColor.set("#1a2a30");
+    }
+
+    const startArea = resolveAreaKey(this.environment, 0);
+    this.currentBiome = startArea.key;
+    this.currentBiomeName = startArea.cfg.name;
+    this.lastBiomeAnnounced = startArea.key;
+
+    if (snapAtmosphere) {
+      const cfg = startArea.cfg;
+      const U = this.U;
+      U.uMangrove.value = isMangrove ? 1.0 : 0.0;
+      U.uHorizon.value.copy(cfg.horizon);
+      U.uMid.value.copy(cfg.mid);
+      U.uZenith.value.copy(cfg.zenith);
+      U.uHaze.value.copy(cfg.haze);
+      U.uSunColor.value.copy(cfg.sunColor);
+      U.uSunGlare.value = cfg.sunGlare * this.sunGlareMult;
+      U.uStarBoost.value = cfg.starBoost;
+      this.uDeepColor.copy(cfg.deep);
+      this.uScatterColor.copy(cfg.scatter);
+      this.uFogDensity.value = cfg.fogDensity;
+      this.fog.density = cfg.fogDensity;
+      this.fog.color.copy(cfg.fogColor);
+      this.hemi.intensity = cfg.hemiInt;
+      this.sun.intensity = cfg.sunInt;
+    }
+  }
+
   applySettings(s: GameSettings) {
     this.difficulty = s.difficulty;
+    const prevEnv = this.environment;
     this.environment = s.environment ?? "sea";
     this.screenShakeEnabled = s.screenShake;
     this.touchControl = s.touchControl;
     this.haptics = s.haptics;
     if (!s.screenShake) this.shake = 0;
-    this.U.uSunGlare.value = s.sunGlare === "minimal" ? 0.42 : 1.0;
+    this.sunGlareMult = s.sunGlare === "minimal" ? 0.42 : 1.0;
+
+    if (this.state === "menu" || prevEnv !== this.environment) {
+      this.syncEnvironmentVisuals(this.state === "menu");
+    }
 
     if (s.quality === "auto") {
       this.qualityLocked = false;
@@ -907,6 +1064,7 @@ export class GameEngine {
     if (this.state === "playing") return;
     const tune = DIFF_TUNING[this.difficulty];
     this.clearEntities();
+    this.syncEnvironmentVisuals(true);
     this.score = 0;
     this.combo = 1;
     this.maxCombo = 1;
@@ -932,9 +1090,6 @@ export class GameEngine {
     this.stormTimer = tune.stormStart;
     this.pushVx = 0;
     this.coreAmt = 0;
-    this.currentBiome = "dusk";
-    this.currentBiomeName = "Dusk Shallows";
-    this.lastBiomeAnnounced = "dusk";
     this.lastLighthouseTriggered = 0;
     this.shipwreckTimer = 14;
     this.buoyTimer = 18;
@@ -991,6 +1146,7 @@ export class GameEngine {
 
   toMenu() {
     this.clearEntities();
+    this.syncEnvironmentVisuals(true);
     for (let i = 0; i < 2; i++) this.spawnPattern(this.boat.position.z - 42 - i * 44);
     this.lanternFade = 1;
     this.stormOn = false;
@@ -1307,7 +1463,7 @@ export class GameEngine {
           float calm = 1.0 - uStorm;
 
           // stars
-          float starMask = smoothstep(0.15, 0.75, d.y) * calm;
+          float starMask = smoothstep(0.15, 0.75, d.y) * calm * mix(1.0, 0.38, uMangrove);
           if (starMask > 0.01) {
             vec2 sp = d.xz / (d.y + 0.35) * 48.0;
             vec2 cell = floor(sp);
@@ -1315,15 +1471,15 @@ export class GameEngine {
             vec2 off = vec2(hash21(cell + 7.3), hash21(cell + 13.1)) - 0.5;
             float dd = length(fract(sp) - 0.5 - off * 0.6);
             float tw = 0.6 + 0.4 * sin(uTime * (1.5 + h * 3.0) + h * 40.0);
-            float thresh = 0.90 - (uStarBoost - 1.0) * 0.04;
+            float thresh = 0.90 - (uStarBoost - 1.0) * 0.04 + uMangrove * 0.03;
             col += vec3(0.8, 0.9, 1.0) * step(thresh, h) * smoothstep(0.1, 0.0, dd) * tw * starMask * (1.2 + (uStarBoost - 1.0) * 0.8);
 
             // Milky Way galactic dust lane (prominent in Starlit Abyss)
             float mw = smoothstep(0.2, 0.85, sin(d.x * 2.1 + d.z * 1.5 + 1.2)) * smoothstep(0.18, 0.75, d.y);
-            col += vec3(0.08, 0.14, 0.28) * mw * (1.0 - uSunGlare) * starMask * 0.9;
+            col += vec3(0.08, 0.14, 0.28) * mw * (1.0 - uSunGlare) * starMask * 0.9 * (1.0 - uMangrove);
 
             // Shooting stars in the night sky
-            if (uStarBoost > 1.3) {
+            if (uStarBoost > 1.3 && uMangrove < 0.5) {
               float mt = mod(uTime * 0.4, 6.0);
               if (mt < 0.65) {
                 float prog = mt / 0.65;
@@ -1341,7 +1497,11 @@ export class GameEngine {
           }
 
           // soft dusk sun disk (eye-friendly, no blinding flare)
-          col += uSunColor * smoothstep(0.99935, 0.99985, s) * 1.85 * calm * uSunGlare;
+          col += uSunColor * smoothstep(0.99935, 0.99985, s) * 1.85 * calm * uSunGlare * (1.0 - uMangrove);
+
+          // midnight moon disk & silver-teal corona in mangrove mode
+          float md = max(dot(d, uMoonDir), 0.0);
+          col += uSunColor * smoothstep(0.9988, 0.99945, md) * 1.55 * calm * uMangrove;
 
           // clouds
           float cm = smoothstep(-0.01, 0.1, d.y);
@@ -1353,12 +1513,25 @@ export class GameEngine {
             float cover = mix(0.5, 0.27, uStorm);
             float dens = smoothstep(cover, cover + 0.28, c) * cm;
             float thin = 1.0 - smoothstep(cover, cover + 0.4, c);
-            float sunAmt = pow(s, 4.0) * uSunGlare;
-            vec3 cDark = mix(vec3(0.085, 0.07, 0.10), vec3(0.008, 0.011, 0.014), uStorm);
-            vec3 cLit = mix(uHorizon * 0.78, uSunColor * 1.15, sunAmt) * (0.3 + 0.7 * calm);
-            vec3 cc = mix(cDark, cLit, thin * (0.25 + 0.75 * sunAmt));
+            float litAmt = mix(pow(s, 4.0) * uSunGlare, pow(md, 5.0) * 0.75, uMangrove);
+            vec3 cDark = mix(vec3(0.085, 0.07, 0.10), vec3(0.012, 0.025, 0.032), uMangrove);
+            cDark = mix(cDark, vec3(0.008, 0.011, 0.014), uStorm);
+            vec3 cLit = mix(uHorizon * 0.78, uSunColor * 1.15, litAmt) * (0.3 + 0.7 * calm);
+            vec3 cc = mix(cDark, cLit, thin * (0.25 + 0.75 * litAmt));
             cc += uFlash * vec3(0.3, 0.37, 0.56) * (0.3 + 0.7 * c2);
-            col = mix(col, cc, dens * 0.9);
+            col = mix(col, cc, dens * mix(0.9, 0.72, uMangrove));
+          }
+
+          // distant mangrove treeline silhouettes along river flanks and far mist
+          if (uMangrove > 0.001 && d.y < 0.28) {
+            float az = atan(d.x, -d.z);
+            float crown = 0.055 + 0.075 * vnoise(vec2(az * 9.0 + uCloudShift * 6.0, 2.1))
+                        + 0.035 * vnoise(vec2(az * 24.0 + uCloudShift * 12.0, 7.4));
+            float bankWall = smoothstep(0.18, 0.65, abs(d.x)) * 0.08;
+            float treeH = crown + bankWall;
+            float treeMask = (1.0 - smoothstep(treeH - 0.018, treeH + 0.012, d.y)) * smoothstep(-0.04, 0.015, d.y);
+            vec3 silCol = mix(uMid * 0.45, vec3(0.012, 0.036, 0.034), 0.75);
+            col = mix(col, silCol, treeMask * uMangrove * 0.92);
           }
 
           col += (hash21(gl_FragCoord.xy) - 0.5) * 0.004;
@@ -1455,13 +1628,26 @@ export class GameEngine {
           float sunFace = max(dot(-V, uSunDir), 0.0);
           sunFace *= sunFace;
           float crest = clamp(h0 / max(uAmp, 0.5) * 0.6 + 0.45, 0.0, 1.0);
-          vec3 body = uDeep + uScatter * (0.10 + 0.28 * sunFace * calm) * crest;
+          vec3 body = uDeep + uScatter * (0.10 + 0.28 * sunFace * calm * (1.0 - uMangrove)) * crest;
+
+          // --- mangrove canopy-gap moonlight dapple & deeper bank overhang shadows ---
+          if (uMangrove > 0.001) {
+            float channelMask = smoothstep(24.0, 4.0, abs(p.x));
+            float gapNoise = smoothstep(0.32, 0.78, vnoise(p * 0.072 + vec2(0.0, 1.4)));
+            float dapple = mix(0.35, 1.0, channelMask * gapNoise);
+            body = mix(body, body * (0.55 + 0.65 * dapple) + uScatter * 0.14 * dapple, uMangrove);
+            refl *= mix(1.0, 0.48 + 0.52 * channelMask, uMangrove);
+          }
+
           body *= 1.0 - uStorm * 0.5;
           vec3 col = mix(body, refl, F);
 
-          // --- controlled sun glitter (gentle on the eyes) ---
+          // --- controlled sun glitter (sea) & cool moonlight trail (mangrove) ---
           float sd = max(dot(R, uSunDir), 0.0);
-          col += uSunColor * pow(sd, mix(90.0, 580.0, fFine)) * mix(0.9, 4.0, fFine) * calm * uSunGlare;
+          col += uSunColor * pow(sd, mix(90.0, 580.0, fFine)) * mix(0.9, 4.0, fFine) * calm * uSunGlare * (1.0 - uMangrove);
+          float mrd = max(dot(R, uMoonDir), 0.0);
+          float moonChannel = smoothstep(25.0, 3.0, abs(p.x));
+          col += uSunColor * pow(mrd, mix(55.0, 260.0, fFine)) * mix(0.35, 1.4, fFine) * calm * uMangrove * (0.35 + 0.65 * moonChannel);
 
           // --- lantern, wisps & mine beacon light on the water ---
           vec3 glowDiff = vec3(0.0);
@@ -1472,8 +1658,9 @@ export class GameEngine {
             if (inten > 0.001 && d2 < 3600.0) {
               vec3 L = Lv * inversesqrt(d2);
               float nh = max(dot(N, normalize(L + V)), 0.0);
-              glowDiff += uGlowCol[i] * (inten / (1.0 + d2 * 0.07)) * max(dot(N, L), 0.0);
-              col += uGlowCol[i] * inten * (pow(nh, 160.0) * 3.0 + pow(nh, 22.0) * 0.22) / (1.0 + d2 * 0.012);
+              float boost = (i == 0) ? (1.0 + uMangrove * 0.35) : 1.0;
+              glowDiff += uGlowCol[i] * (inten * boost / (1.0 + d2 * 0.07)) * max(dot(N, L), 0.0);
+              col += uGlowCol[i] * inten * boost * (pow(nh, 160.0) * 3.0 + pow(nh, 22.0) * 0.22) / (1.0 + d2 * 0.012);
             }
           }
           col += glowDiff * (uScatter * 1.6 + 0.07);
@@ -3144,9 +3331,10 @@ export class GameEngine {
       b.sounded = false;
     }
     if (this.lighthouse) this.lighthouse.visible = false;
-    this.currentBiome = "dusk";
-    this.currentBiomeName = "Dusk Shallows";
-    this.lastBiomeAnnounced = "dusk";
+    const startArea = resolveAreaKey(this.environment, 0);
+    this.currentBiome = startArea.key;
+    this.currentBiomeName = startArea.cfg.name;
+    this.lastBiomeAnnounced = startArea.key;
     this.lastLighthouseTriggered = 0;
     this.pCount = 0;
     this.pGeo.setDrawRange(0, 0);
@@ -3486,8 +3674,10 @@ export class GameEngine {
     if (this.state === "playing") this.runTime += dt;
     const d = menu ? 0 : clamp(this.runTime / 135, 0, 1);
 
+    const isMangrove = this.environment === "mangrove";
+
     // ---------- weather ----------
-    if (this.state === "playing") {
+    if (this.state === "playing" && !isMangrove) {
       this.stormTimer -= dt;
       if (this.stormTimer <= 0) {
         if (this.stormOn) {
@@ -3502,21 +3692,24 @@ export class GameEngine {
           this.audio.warn();
         }
       }
+    } else if (isMangrove) {
+      this.stormOn = false;
     }
     this.storm = damp(this.storm, this.stormOn ? 1 : 0, 0.6, rawDt);
     if (this.storm < 0.002 && !this.stormOn) this.storm = 0;
-    this.amp = 1 + this.storm * 0.8 + d * 0.16;
+    this.amp = isMangrove ? 0.36 + this.storm * 0.2 + d * 0.05 : 1 + this.storm * 0.8 + d * 0.16;
     this.flash *= Math.exp(-5.5 * rawDt);
     if (this.flash < 0.003) this.flash = 0;
-    this.windX = this.storm * 7.8 * Math.sin(this.t * 0.45 + 1.3);
+    this.windX = this.storm * (isMangrove ? 2.4 : 7.8) * Math.sin(this.t * 0.45 + 1.3);
     U.uAmp.value = this.amp;
     U.uStorm.value = this.storm;
     U.uFlash.value = this.flash;
+    U.uMangrove.value = damp(U.uMangrove.value, isMangrove ? 1.0 : 0.0, 2.5, rawDt);
     if (Math.abs(this.storm - this.lastRain) > 0.04) {
       this.lastRain = this.storm;
       this.audio.setRain(this.storm);
     }
-    if (this.storm > 0.5) {
+    if (!isMangrove && this.storm > 0.5) {
       this.ambientBoltT -= dt;
       if (this.ambientBoltT <= 0) {
         this.ambientBoltT = 3.5 + Math.random() * 5;
@@ -3534,26 +3727,23 @@ export class GameEngine {
     const distMeters = Math.max(0, Math.floor(-bz / 10));
 
     // ---------- biomes & atmosphere ----------
-    let targetBiome: "dusk" | "abyss" | "graveyard" = "dusk";
-    if (distMeters >= 700) targetBiome = "graveyard";
-    else if (distMeters >= 400) targetBiome = "abyss";
-
-    if (this.state === "playing" && targetBiome !== this.lastBiomeAnnounced) {
-      this.lastBiomeAnnounced = targetBiome;
-      this.currentBiome = targetBiome;
-      this.currentBiomeName = BIOMES[targetBiome].name;
+    const resolvedArea = resolveAreaKey(this.environment, distMeters);
+    if (this.state === "playing" && resolvedArea.key !== this.lastBiomeAnnounced) {
+      this.lastBiomeAnnounced = resolvedArea.key;
+      this.currentBiome = resolvedArea.key;
+      this.currentBiomeName = resolvedArea.cfg.name;
       this.cb.onAlert({ text: `Entering ${this.currentBiomeName}`, tone: "milestone" });
       this.audio.biomeCue();
     }
 
-    const tb = BIOMES[this.currentBiome];
+    const tb = resolveAreaKey(this.environment, this.state === "playing" ? distMeters : 0).cfg;
     const bLerp = Math.min(1, dt * 1.5);
     U.uHorizon.value.lerp(tb.horizon, bLerp);
     U.uMid.value.lerp(tb.mid, bLerp);
     U.uZenith.value.lerp(tb.zenith, bLerp);
     U.uHaze.value.lerp(tb.haze, bLerp);
     U.uSunColor.value.lerp(tb.sunColor, bLerp);
-    U.uSunGlare.value = lerp(U.uSunGlare.value, tb.sunGlare, bLerp);
+    U.uSunGlare.value = lerp(U.uSunGlare.value, tb.sunGlare * this.sunGlareMult, bLerp);
     U.uStarBoost.value = lerp(U.uStarBoost.value, tb.starBoost, bLerp);
     this.uDeepColor.lerp(tb.deep, bLerp);
     this.uScatterColor.lerp(tb.scatter, bLerp);
@@ -3565,12 +3755,12 @@ export class GameEngine {
     this.hemi.intensity = tb.hemiInt * (1.0 - this.storm * 0.5) + this.flash * 2.2;
     this.sun.intensity = tb.sunInt * (1.0 - this.storm * 0.88);
 
-    // ---------- lighthouse havens (every 200m) ----------
+    // ---------- lighthouse havens (sea mode every 200m) ----------
     const nextMilestoneM = Math.floor(distMeters / 200 + 1) * 200;
     const milestoneZ = -nextMilestoneM * 10;
     const distToMilestoneM = (bz - milestoneZ) / 10;
 
-    if (distToMilestoneM < 220 && distToMilestoneM > -30) {
+    if (!isMangrove && distToMilestoneM < 220 && distToMilestoneM > -30) {
       this.lighthouse.visible = true;
       this.lighthouse.position.set(34, this.surf(34, milestoneZ) - 2.5, milestoneZ);
       this.lighthouseBeam.rotation.y = this.t * 0.8;
@@ -3753,8 +3943,9 @@ export class GameEngine {
       this.lanternFade *
       (1 + Math.sin(this.t * 9.3) * 0.06 + Math.sin(this.t * 23.7) * 0.04) *
       (1 + this.lanternPulse * 0.8);
-    this.lanternLight.intensity = 42 * lampLevel;
-    this.lanternGlass.emissiveIntensity = 4.4 * lampLevel;
+    this.lanternLight.intensity = (isMangrove ? 54 : 42) * lampLevel;
+    this.lanternLight.distance = isMangrove ? 44 : 36;
+    this.lanternGlass.emissiveIntensity = (isMangrove ? 5.2 : 4.4) * lampLevel;
     if (this.flameMesh) {
       const fl = 0.84 + Math.sin(this.t * 13.7) * 0.15 + Math.sin(this.t * 29.3) * 0.07;
       this.flameMesh.scale.set(1, fl * lampLevel, 1);
@@ -3814,7 +4005,7 @@ export class GameEngine {
         this.spawnJelly();
         this.jellyTimer = (this.currentBiome === "abyss" ? 7 : 21) + Math.random() * 8;
       }
-      if (this.currentBiome === "graveyard" || distMeters >= 680) {
+      if (!isMangrove && (this.currentBiome === "graveyard" || distMeters >= 680)) {
         this.shipwreckTimer -= dt;
         if (this.shipwreckTimer <= 0) {
           this.spawnShipwreck();
@@ -4214,8 +4405,10 @@ export class GameEngine {
     this.skyMesh.position.copy(cam.position);
     this.uCloudShift.value = bz * 0.0006;
     this.uBoat.set(bx, bz, this.vxSmooth / Math.max(this.speed, 6), clamp(this.speed / 19, 0, 1.25));
-    for (const isle of this.islands) {
-      if (isle.position.z > bz - 120) this.recycleIsland(isle);
+    if (!isMangrove) {
+      for (const isle of this.islands) {
+        if (isle.position.z > bz - 120) this.recycleIsland(isle);
+      }
     }
     boat.updateMatrixWorld();
     this.gatherGlows(bz, lampLevel);
@@ -4239,8 +4432,9 @@ export class GameEngine {
     const pos = this.uGlowPos;
     const col = this.uGlowCol;
     this.lanternLight.getWorldPosition(this.tmpV);
-    pos[0].set(this.tmpV.x, this.tmpV.y, this.tmpV.z, 1.5 * lampLevel);
-    col[0].set(1.0, 0.52, 0.2);
+    const isMangrove = this.environment === "mangrove";
+    pos[0].set(this.tmpV.x, this.tmpV.y, this.tmpV.z, (isMangrove ? 2.05 : 1.5) * lampLevel);
+    col[0].set(1.0, isMangrove ? 0.68 : 0.52, isMangrove ? 0.32 : 0.2);
     let n = 1;
     for (const j of this.jellies) {
       if (j.active && n < this.NG && Math.abs(j.z - bz) < 70) {
@@ -4343,6 +4537,10 @@ export class GameEngine {
 
 function sunDir(): THREE.Vector3 {
   return new THREE.Vector3(-0.38, 0.115, -0.918).normalize();
+}
+
+function moonDir(): THREE.Vector3 {
+  return new THREE.Vector3(-0.18, 0.38, -0.91).normalize();
 }
 
 function rod(a: THREE.Vector3, b: THREE.Vector3, r: number, mat: THREE.Material): THREE.Mesh {
