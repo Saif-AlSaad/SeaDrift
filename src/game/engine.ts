@@ -774,6 +774,7 @@ export class GameEngine {
   private fSeed!: Float32Array;
   private fCount = 0;
   private mPollenTimer = 0;
+  private mAudioTimer = 2.5;
   private mDummy = new THREE.Object3D();
   private mNextTreeZ = 20;
   private mNextArchZ = -10;
@@ -1054,6 +1055,7 @@ export class GameEngine {
   /** Snap or sync sky, lighting, islands, and zone state for the active environment mode. */
   private syncEnvironmentVisuals(snapAtmosphere: boolean) {
     const isMangrove = this.environment === "mangrove";
+    this.audio.setEnvironment(this.environment);
     for (const isle of this.islands) {
       isle.visible = !isMangrove;
     }
@@ -4964,6 +4966,18 @@ export class GameEngine {
             0.12,
             0.6,
           );
+        }
+      }
+      if (playing) {
+        this.mAudioTimer -= dt;
+        if (this.mAudioTimer <= 0) {
+          this.mAudioTimer = 2.2 + Math.random() * 3.4;
+          const pan = (Math.random() < 0.5 ? -1 : 1) * (0.35 + Math.random() * 0.55);
+          const pick = Math.random();
+          if (pick < 0.42) this.audio.mangroveInsectChirp(pan);
+          else if (pick < 0.68) this.audio.mangroveFrog(pan);
+          else if (pick < 0.86) this.audio.mangroveLeafRustle(pan);
+          else this.audio.mangroveBird(pan);
         }
       }
     }

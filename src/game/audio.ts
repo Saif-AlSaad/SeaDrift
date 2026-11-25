@@ -10,6 +10,9 @@ export class GameAudio {
   private muted = false;
   private volume = 0.8;
   private ambientOn = false;
+  private environment: "sea" | "mangrove" = "sea";
+  private seaAmbGain: GainNode | null = null;
+  private mangroveAmbGain: GainNode | null = null;
   private rumbleGain: GainNode | null = null;
   private rainGain: GainNode | null = null;
 
@@ -55,6 +58,19 @@ export class GameAudio {
     this.volume = Math.max(0, Math.min(1, v));
     if (this.ctx && this.master && !this.muted) {
       this.master.gain.setTargetAtTime(this.volume, this.ctx.currentTime, 0.04);
+    }
+  }
+
+  /** Cross-fade background ambience between open ocean swell and midnight mangrove forest. */
+  setEnvironment(env: "sea" | "mangrove") {
+    this.environment = env;
+    if (!this.ctx) return;
+    const t = this.ctx.currentTime;
+    if (this.seaAmbGain) {
+      this.seaAmbGain.gain.setTargetAtTime(env === "sea" ? 1 : 0, t, 0.45);
+    }
+    if (this.mangroveAmbGain) {
+      this.mangroveAmbGain.gain.setTargetAtTime(env === "mangrove" ? 1 : 0, t, 0.45);
     }
   }
 
@@ -242,6 +258,116 @@ export class GameAudio {
     this.tone(1760.0, { type: "sine", peak: 0.035, attack: 0.002, decay: 0.6, delay: 0.008 });
   }
 
+  /** Helper routing a node through a stereo panner into master output. */
+  private pannedDest(pan: number): AudioNode {
+    if (!this.ctx || !this.master) throw new Error("Audio not initialized");
+    if (typeof this.ctx.createStereoPanner === "function") {
+      const p = this.ctx.createStereoPanner();
+      p.pan.value = Math.max(-1, Math.min(1, pan));
+      p.connect(this.master);
+      return p;
+    }
+    return this.master;
+  }
+
+  /** Spatially panned tropical night cricket / cicada chirp. */
+  mangroveInsectChirp(pan = 0) {
+    const ctx = this.ensure();
+    if (!ctx || !this.master || this.muted) return;
+    const dest = this.pannedDest(pan);
+    const baseF = 3850 + Math.random() * 750;
+    const pulses = 3 + Math.floor(Math.random() * 3);
+    for (let i = 0; i < pulses; i++) {
+      const t0 = ctx.currentTime + i * 0.065;
+      const osc = ctx.createOscillator();
+      osc.type = "sine";
+      osc.frequency.setValueAtTime(baseF, t0);
+      osc.frequency.exponentialRampToValueAtTime(baseF * 0.94, t0 + 0.045);
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0.0001, t0);
+      g.gain.exponentialRampToValueAtTime(0.016, t0 + 0.008);
+      g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.048);
+      osc.connect(g).connect(dest);
+      osc.start(t0);
+      osc.stop(t0 + 0.055);
+    }
+  }
+
+  /** Distant resonant frog croak along the mangrove riverbank. */
+  mangroveFrog(pan = 0) {
+    const ctx = this.ensure();
+    if (!ctx || !this.master || this.muted) return;
+    const dest = this.pannedDest(pan);
+    const baseF = 110 + Math.random() * 32;
+    for (let i = 0; i < 2; i++) {
+      const t0 = ctx.currentTime + i * 0.24;
+      const osc = ctx.createOscillator();
+      osc.type = "triangle";
+      osc.frequency.setValueAtTime(baseF * (i === 0 ? 1.0 : 0.94), t0);
+      osc.frequency.exponentialRampToValueAtTime(baseF * 0.72, t0 + 0.14);
+      const bp = ctx.createBiquadFilter();
+      bp.type = "bandpass";
+      bp.frequency.value = 340;
+      bp.Q.value = 2.6;
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0.0001, t0);
+      g.gain.exponentialRampToValueAtTime(0.042, t0 + 0.025);
+      g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.16);
+      osc.connect(bp).connect(g).connect(dest);
+      osc.start(t0);
+      osc.stop(t0 + 0.18);
+    }
+  }
+
+  /** Soft nocturnal forest bird call echoing gently across the water. */
+  mangroveBird(pan = 0) {
+    const ctx = this.ensure();
+    if (!ctx || !this.master || this.muted) return;
+    const dest = this.pannedDest(pan);
+    const f1 = 520 + Math.random() * 140;
+    const notes = [f1, f1 * 0.82];
+    notes.forEach((f, i) => {
+      const t0 = ctx.currentTime + i * 0.36;
+      const osc = ctx.createOscillator();
+      osc.type = "sine";
+      osc.frequency.setValueAtTime(f, t0);
+      osc.frequency.exponentialRampToValueAtTime(f * 0.91, t0 + 0.28);
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0.0001, t0);
+      g.gain.exponentialRampToValueAtTime(0.026, t0 + 0.05);
+      g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.32);
+      osc.connect(g).connect(dest);
+      osc.start(t0);
+      osc.stop(t0 + 0.35);
+    });
+  }
+
+  /** Gentle canopy wind rustling leaves above the river. */
+  mangroveLeafRustle(pan = 0) {
+    const ctx = this.ensure();
+    if (!ctx || !this.master || this.muted) return;
+    const dest = this.pannedDest(pan);
+    const dur = 1.25;
+    const len = Math.floor(ctx.sampleRate * dur);
+    const buf = ctx.createBuffer(1, len, ctx.sampleRate);
+    const data = buf.getChannelData(0);
+    for (let i = 0; i < len; i++) {
+      const env = Math.sin((i / len) * Math.PI);
+      data[i] = (Math.random() * 2 - 1) * env;
+    }
+    const src = ctx.createBufferSource();
+    src.buffer = buf;
+    const bp = ctx.createBiquadFilter();
+    bp.type = "bandpass";
+    bp.frequency.setValueAtTime(950, ctx.currentTime);
+    bp.frequency.exponentialRampToValueAtTime(620, ctx.currentTime + dur);
+    bp.Q.value = 1.1;
+    const g = ctx.createGain();
+    g.gain.value = 0.028;
+    src.connect(bp).connect(g).connect(dest);
+    src.start();
+  }
+
   /** Atmospheric chime cue when crossing into a new biome. */
   biomeCue() {
     const ctx = this.ensure();
@@ -263,19 +389,27 @@ export class GameAudio {
       this.rainGain.gain.setTargetAtTime(v * 0.085, this.ctx.currentTime, 0.3);
   }
 
-  /** Gentle infinite ambience: warm pad + filtered wave noise. */
+  /** Gentle infinite ambience: ocean swell + mangrove night forest bus. */
   startAmbient() {
     const ctx = this.ensure();
     if (!ctx || !this.master || this.ambientOn) return;
     this.ambientOn = true;
 
-    // Pad
+    this.seaAmbGain = ctx.createGain();
+    this.seaAmbGain.gain.value = this.environment === "sea" ? 1 : 0;
+    this.seaAmbGain.connect(this.master);
+
+    this.mangroveAmbGain = ctx.createGain();
+    this.mangroveAmbGain.gain.value = this.environment === "mangrove" ? 1 : 0;
+    this.mangroveAmbGain.connect(this.master);
+
+    // Sea Pad
     const padGain = ctx.createGain();
     padGain.gain.value = 0.035;
     const lp = ctx.createBiquadFilter();
     lp.type = "lowpass";
     lp.frequency.value = 340;
-    padGain.connect(lp).connect(this.master);
+    padGain.connect(lp).connect(this.seaAmbGain);
     [65.4, 98.0, 130.8].forEach((f, i) => {
       const o = ctx.createOscillator();
       o.type = i === 2 ? "triangle" : "sine";
@@ -305,7 +439,7 @@ export class GameAudio {
     bp.Q.value = 0.5;
     const waveGain = ctx.createGain();
     waveGain.gain.value = 0.045;
-    src.connect(bp).connect(waveGain).connect(this.master);
+    src.connect(bp).connect(waveGain).connect(this.seaAmbGain);
     src.start();
     const lfo1 = ctx.createOscillator();
     lfo1.frequency.value = 0.085;
@@ -320,7 +454,37 @@ export class GameAudio {
     lfo2.connect(amt2).connect(bp.frequency);
     lfo2.start();
 
-    // Whirlpool rumble + rain: silent layers the engine fades in
+    // Mangrove gentle river flow + canopy night breeze + distant insect shimmer
+    const riverBp = ctx.createBiquadFilter();
+    riverBp.type = "lowpass";
+    riverBp.frequency.value = 240;
+    const riverGain = ctx.createGain();
+    riverGain.gain.value = 0.032;
+    src.connect(riverBp).connect(riverGain).connect(this.mangroveAmbGain);
+
+    const breezeBp = ctx.createBiquadFilter();
+    breezeBp.type = "bandpass";
+    breezeBp.frequency.value = 720;
+    breezeBp.Q.value = 0.9;
+    const breezeGain = ctx.createGain();
+    breezeGain.gain.value = 0.012;
+    src.connect(breezeBp).connect(breezeGain).connect(this.mangroveAmbGain);
+
+    const insectOsc = ctx.createOscillator();
+    insectOsc.type = "sine";
+    insectOsc.frequency.value = 4150;
+    const insectGain = ctx.createGain();
+    insectGain.gain.value = 0.0022;
+    const insectLfo = ctx.createOscillator();
+    insectLfo.frequency.value = 0.24;
+    const insectLfoAmt = ctx.createGain();
+    insectLfoAmt.gain.value = 0.0018;
+    insectLfo.connect(insectLfoAmt).connect(insectGain.gain);
+    insectOsc.connect(insectGain).connect(this.mangroveAmbGain);
+    insectOsc.start();
+    insectLfo.start();
+
+    // Whirlpool rumble + rain: shared layers across environments
     const rumbleLp = ctx.createBiquadFilter();
     rumbleLp.type = "lowpass";
     rumbleLp.frequency.value = 110;
