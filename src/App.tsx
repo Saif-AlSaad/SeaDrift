@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Capacitor } from "@capacitor/core";
+import { EnvironmentPreview } from "./components/EnvironmentPreview";
 import { COMBO_WINDOW, GameEngine } from "./game/engine";
 import type { AlertData, GameState, PopupData, RunStats } from "./game/engine";
 import { GameAudio } from "./game/audio";
@@ -1100,42 +1101,27 @@ export default function App() {
                     }`}
                   >
                     {/* Ocean visual preview banner */}
-                    <div
-                      className="relative h-40 w-full overflow-hidden"
-                      style={{
-                        background:
-                          "linear-gradient(180deg, #1d3b52 0%, #856876 46%, #e88448 76%, #08323f 77%, #041920 100%)",
-                      }}
-                    >
-                      <div
-                        className="absolute left-1/2 top-[56%] h-20 w-20 -translate-x-1/2 -translate-y-1/2 rounded-full opacity-90 blur-[2px]"
-                        style={{
-                          background: "radial-gradient(circle, #ffe4a8 0%, #f4ad6c 45%, transparent 72%)",
-                        }}
-                      />
-                      <svg
-                        viewBox="0 0 400 120"
-                        preserveAspectRatio="none"
-                        className="absolute inset-x-0 bottom-0 h-16 w-full"
-                      >
-                        <path
-                          d="M0 78 Q55 62 110 78 T220 78 T330 78 T400 76 L400 120 L0 120 Z"
-                          fill="#08323f"
-                          opacity="0.92"
-                        />
-                        <path
-                          d="M0 92 Q65 80 130 92 T260 92 T400 90 L400 120 L0 120 Z"
-                          fill="#1ea49c"
-                          opacity="0.28"
-                        />
-                      </svg>
-                      <div className="absolute left-4 top-4 inline-flex items-center gap-1.5 rounded-full border border-emerald-400/45 bg-[#051a1d]/80 px-3 py-1 text-[10px] font-bold uppercase tracking-widest text-emerald-300 backdrop-blur-xs">
+                    <div className="relative h-48 sm:h-52 w-full overflow-hidden bg-[#061820]">
+                      <div className="h-full w-full transition-transform duration-700 ease-out group-hover:scale-[1.03]">
+                        <EnvironmentPreview mode="sea" className="h-full w-full" />
+                      </div>
+                      {/* Subtle atmospheric vignette & seamless bottom melt */}
+                      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_top,transparent_50%,rgba(4,19,26,0.48)_100%)]" />
+                      <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-amber/30 to-transparent" />
+                      <div className="pointer-events-none absolute inset-x-0 bottom-0 h-20 bg-gradient-to-t from-[#061820] via-[#061820]/65 to-transparent" />
+
+                      <div className="absolute left-4 top-4 inline-flex items-center gap-1.5 rounded-full border border-emerald-400/45 bg-[#051a1d]/80 px-3 py-1 text-[10px] font-bold uppercase tracking-widest text-emerald-300 shadow-[0_4px_16px_rgba(0,0,0,0.45)] backdrop-blur-md">
                         <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 shadow-[0_0_8px_#34d399]" />
                         Unlocked
                       </div>
+                      <div className="pointer-events-none absolute bottom-5 left-5 right-5 flex items-center justify-between text-[10px] font-semibold uppercase tracking-[0.16em] text-amber/80">
+                        <span className="rounded-full border border-amber/20 bg-[#041820]/70 px-2.5 py-0.5 backdrop-blur-xs">
+                          Open Ocean
+                        </span>
+                      </div>
                     </div>
 
-                    <div className="flex flex-1 flex-col justify-between p-6">
+                    <div className="relative z-10 -mt-3 flex flex-1 flex-col justify-between p-6 pt-3">
                       <div>
                         <div className="flex items-center justify-between">
                           <h3 className="font-display text-xl font-black tracking-wide text-foam">
@@ -1177,49 +1163,21 @@ export default function App() {
                     }`}
                   >
                     {/* Midnight Mangrove visual preview banner */}
-                    <div
-                      className="relative h-40 w-full overflow-hidden"
-                      style={{
-                        background:
-                          "linear-gradient(180deg, #030c14 0%, #071C25 55%, #062D2B 75%, #041b1a 100%)",
-                      }}
-                    >
+                    <div className="relative h-48 sm:h-52 w-full overflow-hidden bg-[#06181a]">
+                      <div className="h-full w-full transition-transform duration-700 ease-out group-hover:scale-[1.03]">
+                        <EnvironmentPreview
+                          mode="mangrove"
+                          locked={!mangroveUnlocked}
+                          className="h-full w-full"
+                        />
+                      </div>
+                      {/* Atmospheric vignette & seamless bottom melt */}
+                      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_top,transparent_48%,rgba(4,20,19,0.55)_100%)]" />
+                      <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-[#43E6C1]/30 to-transparent" />
+                      <div className="pointer-events-none absolute inset-x-0 bottom-0 h-20 bg-gradient-to-t from-[#06181a] via-[#06181a]/65 to-transparent" />
+
                       <div
-                        className="absolute left-[38%] top-[34%] h-14 w-14 rounded-full opacity-80"
-                        style={{
-                          background: "radial-gradient(circle, #d9eef4 0%, #A8C9D2 45%, transparent 74%)",
-                        }}
-                      />
-                      {/* Mangrove silhouettes & glowing flora preview */}
-                      <svg
-                        viewBox="0 0 400 140"
-                        preserveAspectRatio="none"
-                        className="absolute inset-0 h-full w-full"
-                      >
-                        <path
-                          d="M0 0 L80 0 Q95 55 130 96 L95 140 L0 140 Z"
-                          fill="#092118"
-                          opacity="0.95"
-                        />
-                        <path
-                          d="M400 0 L320 0 Q305 55 270 96 L305 140 L400 140 Z"
-                          fill="#092118"
-                          opacity="0.95"
-                        />
-                        <path
-                          d="M45 90 Q78 102 82 140 M70 96 Q104 106 108 140 M355 90 Q322 102 318 140 M330 96 Q296 106 292 140"
-                          stroke="#183629"
-                          strokeWidth="4"
-                          fill="none"
-                        />
-                        <circle cx="96" cy="64" r="2.2" fill="#C9E88B" opacity="0.9" />
-                        <circle cx="145" cy="84" r="1.8" fill="#C9E88B" opacity="0.75" />
-                        <circle cx="290" cy="58" r="2.2" fill="#C9E88B" opacity="0.85" />
-                        <circle cx="88" cy="116" r="5" fill="#43E6C1" opacity="0.45" />
-                        <circle cx="312" cy="114" r="5" fill="#43E6C1" opacity="0.45" />
-                      </svg>
-                      <div
-                        className={`absolute left-4 top-4 inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-[10px] font-bold uppercase tracking-widest backdrop-blur-xs ${
+                        className={`absolute left-4 top-4 inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-[10px] font-bold uppercase tracking-widest shadow-[0_4px_16px_rgba(0,0,0,0.45)] backdrop-blur-md ${
                           mangroveUnlocked
                             ? "border-[#43E6C1]/50 bg-[#051d1b]/85 text-[#43E6C1]"
                             : "border-amber/45 bg-[#121614]/85 text-amber"
@@ -1237,9 +1195,14 @@ export default function App() {
                           </>
                         )}
                       </div>
+                      <div className="pointer-events-none absolute bottom-5 left-5 right-5 flex items-center justify-between text-[10px] font-semibold uppercase tracking-[0.16em] text-[#43E6C1]/85">
+                        <span className="rounded-full border border-[#43E6C1]/25 bg-[#041b19]/75 px-2.5 py-0.5 backdrop-blur-xs">
+                          Midnight Canopy
+                        </span>
+                      </div>
                     </div>
 
-                    <div className="flex flex-1 flex-col justify-between p-6">
+                    <div className="relative z-10 -mt-3 flex flex-1 flex-col justify-between p-6 pt-3">
                       <div>
                         <div className="flex items-center justify-between">
                           <h3 className="font-display text-xl font-black tracking-wide text-foam">
@@ -1504,28 +1467,27 @@ export default function App() {
             onClick={(e) => e.stopPropagation()}
           >
             {/* Header preview */}
-            <div
-              className="relative flex items-end justify-between p-5 pb-4"
-              style={{
-                background: "linear-gradient(180deg, #04151c 0%, #072826 100%)",
-              }}
-            >
-              <div>
-                <div className="inline-flex items-center gap-1.5 rounded-full border border-amber/35 bg-black/35 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-widest text-amber">
-                  {I.lock("h-3 w-3")}
-                  Locked Environment
+            <div className="relative h-36 overflow-hidden bg-[#04151c]">
+              <EnvironmentPreview mode="mangrove" locked className="h-full w-full" />
+              <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-[#071e23] via-[#071e23]/45 to-transparent" />
+              <div className="absolute inset-0 flex items-end justify-between p-5 pb-4">
+                <div>
+                  <div className="inline-flex items-center gap-1.5 rounded-full border border-amber/35 bg-black/45 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-widest text-amber backdrop-blur-xs">
+                    {I.lock("h-3 w-3")}
+                    Locked Environment
+                  </div>
+                  <h3 className="mt-2 font-display text-2xl font-black text-foam">
+                    Enchanted Mangrove
+                  </h3>
                 </div>
-                <h3 className="mt-2 font-display text-2xl font-black text-foam">
-                  Enchanted Mangrove
-                </h3>
+                <button
+                  onClick={() => setModal("none")}
+                  aria-label="Close"
+                  className="flex h-8 w-8 items-center justify-center rounded-full border border-white/15 bg-black/40 text-foam/70 backdrop-blur-xs hover:bg-white/15 hover:text-white"
+                >
+                  {I.close("h-4 w-4")}
+                </button>
               </div>
-              <button
-                onClick={() => setModal("none")}
-                aria-label="Close"
-                className="flex h-8 w-8 items-center justify-center rounded-full border border-white/10 bg-white/5 text-foam/60 hover:bg-white/10 hover:text-white"
-              >
-                {I.close("h-4 w-4")}
-              </button>
             </div>
 
             <div className="p-6">
