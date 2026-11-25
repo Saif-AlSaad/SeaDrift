@@ -301,24 +301,28 @@ export default function App() {
   const audioRef = useRef<GameAudio | null>(null);
 
   const [state, setState] = useState<GameState>("menu");
+  const [menuView, setMenuView] = useState<"home" | "modes">("home");
+  const [previewMode, setPreviewMode] = useState<EnvironmentMode>("sea");
   const [settings, setSettings] = useState<GameSettings>(() => loadSettings());
   const [scores, setScores] = useState<ScoreEntry[]>(() => loadScores());
   const [lights, setLights] = useState<number>(() => loadLights());
   const [unlockedModes, setUnlockedModes] = useState<EnvironmentMode[]>(() => loadUnlockedModes());
   const [earnedLights, setEarnedLights] = useState(0);
-  const [needLightsHint, setNeedLightsHint] = useState(false);
   const [final, setFinal] = useState<RunStats | null>(null);
   const [newBest, setNewBest] = useState(false);
   const [newRank, setNewRank] = useState(-1);
   const [popups, setPopups] = useState<Array<PopupData & { id: number }>>([]);
   const [alert, setAlert] = useState<(AlertData & { id: number }) | null>(null);
   const [showHint, setShowHint] = useState(false);
-  const [modal, setModal] = useState<"none" | "settings" | "scores">("none");
+  const [modal, setModal] = useState<"none" | "settings" | "scores" | "unlock">("none");
+  const [unlockPhase, setUnlockPhase] = useState<"idle" | "gathering" | "gateway" | "revealed">("idle");
   const [confirmClear, setConfirmClear] = useState(false);
   const [isFs, setIsFs] = useState(false);
   const histArmed = useRef(false);
+  const settledRunId = useRef(0);
 
   const scoreEl = useRef<HTMLSpanElement>(null);
+  const wispsEl = useRef<HTMLSpanElement>(null);
   const distEl = useRef<HTMLSpanElement>(null);
   const comboEl = useRef<HTMLDivElement>(null);
   const comboNumEl = useRef<HTMLSpanElement>(null);
@@ -329,20 +333,35 @@ export default function App() {
   const jellyFlash = useRef<HTMLDivElement>(null);
   const boltFlash = useRef<HTMLDivElement>(null);
   const lastScore = useRef(-1);
+  const lastWisps = useRef(-1);
   const lastDist = useRef(-1);
   const lastBiome = useRef("");
   const lastCombo = useRef(0);
   const popupId = useRef(0);
   const alertTimer = useRef(0);
+  const unlockTimers = useRef<number[]>([]);
 
   const stateRef = useRef<GameState>("menu");
   stateRef.current = state;
+  const menuViewRef = useRef(menuView);
+  menuViewRef.current = menuView;
   const modalRef = useRef(modal);
   modalRef.current = modal;
+  const unlockPhaseRef = useRef(unlockPhase);
+  unlockPhaseRef.current = unlockPhase;
 
   useEffect(() => {
-    engineRef.current?.setModalOpen(modal !== "none");
-  }, [modal]);
+    engineRef.current?.setModalOpen(modal !== "none" || unlockPhase !== "idle");
+  }, [modal, unlockPhase]);
+
+  useEffect(() => {
+    if (state !== "menu") return;
+    if (menuView === "home") {
+      engineRef.current?.previewEnvironment("sea", false);
+    } else {
+      engineRef.current?.previewEnvironment(previewMode, false);
+    }
+  }, [state, menuView, previewMode]);
 
   useEffect(() => {
     const initial = loadSettings();
@@ -362,6 +381,10 @@ export default function App() {
         if (scoreEl.current && s !== lastScore.current) {
           lastScore.current = s;
           scoreEl.current.textContent = s.toLocaleString("en-US");
+        }
+        if (wispsEl.current && h.wisps !== lastWisps.current) {
+          lastWisps.current = h.wisps;
+          wispsEl.current.textContent = h.wisps.toLocaleString("en-US");
         }
         if (distEl.current && (h.dist !== lastDist.current || h.biome !== lastBiome.current)) {
           lastDist.current = h.dist;
@@ -390,9 +413,12 @@ export default function App() {
         if (energyWrap.current) energyWrap.current.classList.toggle("energy-low", h.energy < 28);
       },
       onGameOver: (stats) => {
-        const nextLights = addLights(stats.wisps);
-        setLights(nextLights);
-        setEarnedLights(stats.wisps);
+        if (settledRunId.current !== stats.runId) {
+          settledRunId.current = stats.runId;
+          const nextLights = addLights(stats.wisps);
+          setLights(nextLights);
+          setEarnedLights(stats.wisps);
+        }
         const entry: ScoreEntry = {
           s: stats.score,
           w: stats.wisps,
@@ -443,6 +469,13 @@ export default function App() {
     window.addEventListener("keydown", unlock, { once: true });
 
     const onKey = (e: KeyboardEvent) => {
+      if (unlockPhaseRef.current !== "idle") {
+        if (e.code === "Escape" && unlockPhaseRef.current === "revealed") {
+          e.preventDefault();
+          setUnlockPhase("idle");
+        }
+        return;
+      }
       if (modalRef.current !== "none") {
         if (e.code === "Escape") {
           e.preventDefault();
@@ -451,18 +484,28 @@ export default function App() {
         }
         return;
       }
-      if (
-        (e.code === "Space" || e.code === "Enter") &&
-        (stateRef.current === "menu" || stateRef.current === "gameover")
-      ) {
+      if (stateRef.current === "menu" && menuViewRef.current === "modes" && e.code === "Escape") {
         e.preventDefault();
-        audioRef.current?.ensure();
-        audioRef.current?.startAmbient();
-        if (!histArmed.current) {
-          history.pushState({ drift: 1 }, "");
-          histArmed.current = true;
+        setMenuView("home");
+        return;
+      }
+      if (e.code === "Space" || e.code === "Enter") {
+        if (stateRef.current === "menu" && menuViewRef.current === "home") {
+          e.preventDefault();
+          audioRef.current?.ensure();
+          audioRef.current?.startAmbient();
+          audioRef.current?.click();
+          setMenuView("modes");
+        } else if (stateRef.current === "gameover") {
+          e.preventDefault();
+          audioRef.current?.ensure();
+          audioRef.current?.startAmbient();
+          if (!histArmed.current) {
+            history.pushState({ drift: 1 }, "");
+            histArmed.current = true;
+          }
+          engine.startRun();
         }
-        engine.startRun();
       }
     };
     window.addEventListener("keydown", onKey);
@@ -470,13 +513,18 @@ export default function App() {
     const onFs = () => setIsFs(!!document.fullscreenElement);
     document.addEventListener("fullscreenchange", onFs);
 
-    // Android back button / gesture: pause instead of leaving the game
+    // Android back button / gesture: pause or step back cleanly
     const onPop = () => {
       histArmed.current = false;
       const rearm = () => {
         history.pushState({ drift: 1 }, "");
         histArmed.current = true;
       };
+      if (unlockPhaseRef.current !== "idle") {
+        if (unlockPhaseRef.current === "revealed") setUnlockPhase("idle");
+        rearm();
+        return;
+      }
       if (modalRef.current !== "none") {
         setModal("none");
         setConfirmClear(false);
@@ -487,8 +535,15 @@ export default function App() {
       if (st === "playing") {
         engine.pause();
         rearm();
-      } else if (st === "paused" || st === "gameover") {
+      } else if (st === "paused") {
+        setMenuView("modes");
         engine.toMenu();
+      } else if (st === "gameover") {
+        setMenuView("modes");
+        engine.toMenu();
+      } else if (st === "menu" && menuViewRef.current === "modes") {
+        setMenuView("home");
+        rearm();
       }
     };
     window.addEventListener("popstate", onPop);
@@ -500,6 +555,7 @@ export default function App() {
       document.removeEventListener("fullscreenchange", onFs);
       window.removeEventListener("popstate", onPop);
       window.clearTimeout(alertTimer.current);
+      for (const tid of unlockTimers.current) window.clearTimeout(tid);
       engine.dispose();
       engineRef.current = null;
     };
@@ -559,15 +615,40 @@ export default function App() {
     }
     updateSettings({ touchControl: mode });
   };
-  const start = () => {
+  const openModeSelect = () => {
     blurActive();
     setModal("none");
+    armHistory();
+    audioRef.current?.ensure();
+    audioRef.current?.startAmbient();
+    audioRef.current?.click();
+    setPreviewMode(settings.environment);
+    setMenuView("modes");
+  };
+  const returnHome = () => {
+    blurActive();
+    setModal("none");
+    audioRef.current?.click();
+    setMenuView("home");
+  };
+  const startMode = (env: EnvironmentMode) => {
+    blurActive();
+    if (env === "mangrove" && !unlockedModes.includes("mangrove")) {
+      setPreviewMode("mangrove");
+      setModal("unlock");
+      audioRef.current?.ensure();
+      audioRef.current?.click();
+      return;
+    }
+    setModal("none");
+    setUnlockPhase("idle");
     armHistory();
     if (IS_TOUCH && settings.autoFullscreen) enterFullscreen();
     audioRef.current?.ensure();
     audioRef.current?.startAmbient();
     audioRef.current?.click();
-    engineRef.current?.startRun();
+    updateSettings({ environment: env });
+    engineRef.current?.startRun(env);
   };
   const togglePause = () => {
     blurActive();
@@ -582,52 +663,79 @@ export default function App() {
     audioRef.current?.click();
     engineRef.current?.startRun();
   };
-  const toMenu = () => {
+  const toModes = () => {
     blurActive();
     setModal("none");
     audioRef.current?.click();
+    setPreviewMode(final?.environment ?? settings.environment);
+    setMenuView("modes");
+    engineRef.current?.toMenu();
+  };
+  const toHome = () => {
+    blurActive();
+    setModal("none");
+    audioRef.current?.click();
+    setMenuView("home");
     engineRef.current?.toMenu();
   };
   const toggleMute = () => {
     blurActive();
     updateSettings({ muted: !settings.muted });
   };
-  const openModal = (m: "settings" | "scores") => {
+  const openModal = (m: "settings" | "scores" | "unlock") => {
     blurActive();
+    audioRef.current?.ensure();
     audioRef.current?.click();
     setConfirmClear(false);
+    if (m === "unlock") setPreviewMode("mangrove");
     setModal(m);
   };
 
   const mangroveUnlocked = unlockedModes.includes("mangrove");
   const canUnlockMangrove = lights >= MANGROVE_UNLOCK_COST;
+  const remainingLights = Math.max(0, MANGROVE_UNLOCK_COST - lights);
 
-  const selectEnvironment = (env: EnvironmentMode) => {
+  const confirmUnlockMangrove = () => {
     blurActive();
-    if (env === "mangrove" && !mangroveUnlocked) {
-      handleUnlockMangrove();
+    if (mangroveUnlocked) {
+      setModal("none");
       return;
     }
-    audioRef.current?.ensure();
-    audioRef.current?.click();
-    updateSettings({ environment: env });
-  };
-
-  const handleUnlockMangrove = () => {
-    blurActive();
     const res = unlockMangroveWithLights(MANGROVE_UNLOCK_COST);
     if (!res.ok) {
       audioRef.current?.ensure();
       audioRef.current?.warn();
-      setNeedLightsHint(true);
-      window.setTimeout(() => setNeedLightsHint(false), 1800);
       return;
     }
     setLights(res.balance);
     setUnlockedModes(res.unlocked);
-    audioRef.current?.ensure();
-    audioRef.current?.chime(5, true);
+    setModal("none");
     updateSettings({ environment: "mangrove" });
+    setPreviewMode("mangrove");
+
+    for (const tid of unlockTimers.current) window.clearTimeout(tid);
+    unlockTimers.current = [];
+
+    audioRef.current?.ensure();
+    audioRef.current?.startAmbient();
+    [0, 2, 4, 6, 8].forEach((step, idx) => {
+      const tid = window.setTimeout(() => audioRef.current?.chime(step, idx >= 3), idx * 145);
+      unlockTimers.current.push(tid);
+    });
+
+    setUnlockPhase("gathering");
+    unlockTimers.current.push(
+      window.setTimeout(() => {
+        engineRef.current?.previewEnvironment("mangrove", true);
+        audioRef.current?.biomeCue();
+        setUnlockPhase("gateway");
+      }, 920),
+    );
+    unlockTimers.current.push(
+      window.setTimeout(() => {
+        setUnlockPhase("revealed");
+      }, 1900),
+    );
   };
 
   const best = scores[0]?.s ?? 0;
@@ -710,6 +818,11 @@ export default function App() {
             >
               0 m
             </span>
+            <div className="mt-1.5 inline-flex items-center gap-1.5 rounded-full border border-amber/30 bg-[#05141a]/75 px-2.5 py-0.5 text-xs font-bold text-amber shadow-[0_2px_10px_rgba(0,0,0,0.45)]">
+              {I.flame("h-3 w-3 text-amber")}
+              <span ref={wispsEl}>0</span>
+              <span className="text-[9px] font-semibold uppercase tracking-wider text-foam/65">Lights</span>
+            </div>
             <div
               ref={comboEl}
               className="mt-2 inline-flex flex-col overflow-hidden rounded-lg border border-amber/50 bg-[#05141a]/80 px-3 py-1.5 opacity-0 transition-all duration-200"
@@ -813,13 +926,23 @@ export default function App() {
         </>
       )}
 
-      {/* ------------------------- START (clean & airy) ------------------------- */}
+      {/* ------------------------- MENU HUB (HOME / MODE SELECTION) ------------------------- */}
       {state === "menu" && (
         <div className="absolute inset-0 overflow-y-auto">
-          {/* top-left lights wallet */}
+          {/* top-left: home back button (in modes view) or lights wallet */}
           <div className="absolute left-4 top-4 z-10 flex items-center gap-2 md:left-6 md:top-6" style={SAFE_TL}>
+            {menuView === "modes" && (
+              <button
+                type="button"
+                onClick={returnHome}
+                className="flex h-11 items-center gap-1.5 rounded-full border border-foam/20 bg-[#05141a]/75 px-4 text-xs font-semibold tracking-wide text-foam/90 shadow-[0_4px_20px_rgba(0,0,0,0.35)] backdrop-blur-xs transition-all hover:border-amber/50 hover:text-amber"
+              >
+                <span>←</span>
+                <span>Home</span>
+              </button>
+            )}
             <div
-              title="Collect glowing wisps during voyages to unlock new environments"
+              title="Collect glowing lights during voyages to unlock new environments"
               className="flex h-11 items-center gap-2 rounded-full border border-amber/35 bg-[#05141a]/75 px-4 text-xs font-bold tracking-wide text-amber shadow-[0_4px_20px_rgba(0,0,0,0.35)] backdrop-blur-xs"
             >
               {I.flame("h-4 w-4 text-amber")}
@@ -879,167 +1002,331 @@ export default function App() {
             </button>
           </div>
 
-          <div className="flex min-h-full flex-col items-center justify-between px-4 pb-6 pt-20 md:py-10">
-            <div />
+          {menuView === "home" ? (
+            <div className="flex min-h-full flex-col items-center justify-between px-4 pb-6 pt-20 md:py-10">
+              <div />
 
-            {/* hero */}
-            <div className="anim-fadeUp flex flex-col items-center text-center">
-              <img
-                src="./icon.png"
-                alt="SeaDrift"
-                className="mb-4 h-20 w-20 rounded-2xl border border-foam/20 shadow-[0_0_32px_rgba(255,180,84,0.35)] transition-transform duration-300 hover:scale-105"
-              />
-              <div className="mb-3 flex items-center justify-center gap-2 text-[10px] font-semibold tracking-[0.36em] text-foam/70">
-                {I.boat("h-4 w-4 shrink-0 text-amber")}
-                {settings.environment === "mangrove" ? "MIDNIGHT MANGROVE VOYAGE" : "DUSK SEA VOYAGE"}
-                {I.boat("h-4 w-4 shrink-0 -scale-x-100 text-amber")}
-              </div>
-              <h1 className="title-glow font-display text-7xl font-black tracking-tight text-foam md:text-8xl">
-                DRIFT
-              </h1>
-              <WaveLine />
-              <p className="mx-auto mt-4 max-w-sm text-[15px] leading-relaxed text-foam/80 [text-shadow:0_1px_12px_rgba(0,0,0,0.65)]">
-                {settings.environment === "mangrove"
-                  ? "Navigate midnight mangrove roots. Guard your lantern light."
-                  : "Gather wisps to keep your lamp burning. Outlast the sea."}
-              </p>
+              {/* homepage hero */}
+              <div className="anim-fadeUp flex flex-col items-center text-center">
+                <img
+                  src="./icon.png"
+                  alt="SeaDrift"
+                  className="mb-4 h-20 w-20 rounded-2xl border border-foam/20 shadow-[0_0_32px_rgba(255,180,84,0.35)] transition-transform duration-300 hover:scale-105"
+                />
+                <div className="mb-3 flex items-center justify-center gap-2 text-[10px] font-semibold tracking-[0.36em] text-foam/70">
+                  {I.boat("h-4 w-4 shrink-0 text-amber")}
+                  SEADRIFT · DUSK VOYAGE
+                  {I.boat("h-4 w-4 shrink-0 -scale-x-100 text-amber")}
+                </div>
+                <h1 className="title-glow font-display text-7xl font-black tracking-tight text-foam md:text-8xl">
+                  DRIFT
+                </h1>
+                <WaveLine />
+                <p className="mx-auto mt-4 max-w-sm text-[15px] leading-relaxed text-foam/80 [text-shadow:0_1px_12px_rgba(0,0,0,0.65)]">
+                  Gather glowing lights to keep your lamp burning. Unlock hidden waters beyond the dusk.
+                </p>
 
-              {/* Environment Mode Selector */}
-              <div className="mt-6 grid w-full max-w-md grid-cols-2 gap-2.5 px-1">
-                {/* Base Mode: Sea */}
-                <button
-                  type="button"
-                  onClick={() => selectEnvironment("sea")}
-                  className={`group flex flex-col items-start rounded-2xl border p-3.5 text-left transition-all duration-200 backdrop-blur-xs ${
-                    settings.environment === "sea"
-                      ? "border-amber/75 bg-[#081d25]/85 shadow-[0_0_20px_rgba(255,180,84,0.2)]"
-                      : "border-foam/15 bg-[#05141a]/65 hover:border-foam/30 hover:bg-[#071b23]/75"
-                  }`}
-                >
-                  <div className="flex w-full items-center justify-between">
-                    <span
-                      className={`flex items-center gap-1.5 text-xs font-bold tracking-wide ${
-                        settings.environment === "sea" ? "text-amber" : "text-foam/85"
-                      }`}
+                <div className="mt-7 flex flex-col items-center gap-3">
+                  <button
+                    onClick={openModeSelect}
+                    className="btn-primary flex items-center gap-3 px-12 py-4 text-base font-bold tracking-[0.2em]"
+                  >
+                    {I.play("h-5 w-5")}
+                    PLAY
+                  </button>
+
+                  <div className="flex flex-wrap items-center justify-center gap-2">
+                    <button
+                      onClick={() => openModal("settings")}
+                      className="inline-flex items-center gap-1.5 rounded-full border border-foam/18 bg-[#05141a]/65 px-3.5 py-1 text-xs font-medium text-foam/80 transition-colors hover:border-foam/35 hover:text-foam"
                     >
-                      {I.boat("h-3.5 w-3.5")}
-                      Sea Voyage
-                    </span>
-                    {settings.environment === "sea" && (
-                      <span className="h-2 w-2 rounded-full bg-amber shadow-[0_0_8px_#ffb454]" />
+                      <span className="h-1.5 w-1.5 rounded-full bg-lumen" />
+                      {DIFF_INFO[settings.difficulty].label} ({DIFF_INFO[settings.difficulty].mult})
+                    </button>
+                    {best > 0 && (
+                      <button
+                        onClick={() => openModal("scores")}
+                        className="inline-flex items-center gap-1.5 rounded-full border border-amber/40 bg-amber/10 px-3.5 py-1 text-xs font-semibold tracking-wider text-amber transition-colors hover:bg-amber/20"
+                      >
+                        {I.flame("h-3.5 w-3.5")}
+                        BEST {best.toLocaleString("en-US")}
+                      </button>
                     )}
-                  </div>
-                  <span className="mt-1 text-[11px] text-foam/55">Base · Dusk open sea</span>
-                </button>
-
-                {/* Unlockable Mode: Enchanted Mangrove */}
-                <button
-                  type="button"
-                  onClick={() => selectEnvironment("mangrove")}
-                  className={`group flex flex-col items-start rounded-2xl border p-3.5 text-left transition-all duration-200 backdrop-blur-xs ${
-                    !mangroveUnlocked
-                      ? canUnlockMangrove
-                        ? "border-[#43E6C1]/70 bg-[#062222]/85 shadow-[0_0_22px_rgba(67,230,193,0.2)] hover:border-[#43E6C1]"
-                        : "border-foam/12 bg-[#05141a]/65 hover:border-foam/25"
-                      : settings.environment === "mangrove"
-                        ? "border-[#43E6C1]/80 bg-[#062422]/85 shadow-[0_0_22px_rgba(67,230,193,0.24)]"
-                        : "border-foam/15 bg-[#05141a]/65 hover:border-[#43E6C1]/40"
-                  }`}
-                >
-                  <div className="flex w-full items-center justify-between">
-                    <span
-                      className={`flex items-center gap-1.5 text-xs font-bold tracking-wide ${
-                        !mangroveUnlocked
-                          ? canUnlockMangrove
-                            ? "text-[#43E6C1]"
-                            : "text-foam/70"
-                          : settings.environment === "mangrove"
-                            ? "text-[#43E6C1]"
-                            : "text-foam/85"
-                      }`}
-                    >
-                      {mangroveUnlocked ? I.leaf("h-3.5 w-3.5") : I.lock("h-3.5 w-3.5")}
-                      Mangrove
-                    </span>
-                    {mangroveUnlocked && settings.environment === "mangrove" && (
-                      <span className="h-2 w-2 rounded-full bg-[#43E6C1] shadow-[0_0_8px_#43E6C1]" />
-                    )}
-                  </div>
-
-                  {mangroveUnlocked ? (
-                    <span className="mt-1 text-[11px] text-foam/55">Midnight forest river</span>
-                  ) : (
-                    <div className="mt-1.5 w-full">
-                      <div className="flex items-center justify-between text-[10px] font-semibold">
-                        <span className={canUnlockMangrove ? "text-[#43E6C1]" : needLightsHint ? "text-ember" : "text-amber/90"}>
-                          {canUnlockMangrove
-                            ? `Unlock · ${MANGROVE_UNLOCK_COST} Lights`
-                            : needLightsHint
-                              ? `Need ${MANGROVE_UNLOCK_COST - lights} more!`
-                              : `${lights}/${MANGROVE_UNLOCK_COST} Lights`}
+                    {!IS_NATIVE && (
+                      <a
+                        href={APK_DOWNLOAD_URL}
+                        download="SeaDrift.apk"
+                        className="inline-flex items-center gap-1.5 rounded-full border border-emerald-500/35 bg-emerald-950/45 px-3.5 py-1 text-xs font-semibold text-emerald-300 transition-all hover:border-emerald-400 hover:bg-emerald-900/60"
+                        title="Download Android APK for 100% offline play"
+                      >
+                        {I.download("h-3.5 w-3.5")}
+                        <span>Android APK</span>
+                        <span className="rounded bg-emerald-500/20 px-1.5 py-0.2 text-[9px] font-bold uppercase tracking-wider text-emerald-300">
+                          Offline
                         </span>
-                      </div>
-                      <div className="mt-1 h-1 w-full overflow-hidden rounded-full bg-foam/10">
-                        <div
-                          className={`h-full rounded-full transition-all duration-300 ${
-                            canUnlockMangrove ? "bg-[#43E6C1]" : "bg-amber/80"
-                          }`}
-                          style={{
-                            width: `${Math.min(100, (lights / MANGROVE_UNLOCK_COST) * 100)}%`,
-                          }}
+                      </a>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              <div />
+            </div>
+          ) : (
+            /* ------------------------- MODE SELECTION SCREEN ------------------------- */
+            <div className="flex min-h-full flex-col items-center justify-center px-4 pb-8 pt-24 md:py-16">
+              <div className="anim-fadeUp w-full max-w-4xl">
+                <div className="mb-6 text-center">
+                  <div className="text-[10px] font-semibold uppercase tracking-[0.34em] text-amber/85">
+                    Select Environment
+                  </div>
+                  <h2 className="mt-1 font-display text-3xl font-black tracking-tight text-foam sm:text-4xl">
+                    CHOOSE YOUR VOYAGE
+                  </h2>
+                  <p className="mt-1.5 text-sm text-foam/65">
+                    Sail the dusk open ocean or spend collected Lights to enter the Enchanted Mangrove.
+                  </p>
+                </div>
+
+                <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
+                  {/* Card 1: Sea Mode */}
+                  <div
+                    onMouseEnter={() => setPreviewMode("sea")}
+                    onFocus={() => setPreviewMode("sea")}
+                    className={`group relative flex flex-col overflow-hidden rounded-3xl border bg-[#061820]/82 backdrop-blur-md transition-all duration-300 ${
+                      previewMode === "sea"
+                        ? "border-amber/75 shadow-[0_12px_45px_rgba(255,180,84,0.22)]"
+                        : "border-foam/15 hover:border-amber/50"
+                    }`}
+                  >
+                    {/* Ocean visual preview banner */}
+                    <div
+                      className="relative h-40 w-full overflow-hidden"
+                      style={{
+                        background:
+                          "linear-gradient(180deg, #1d3b52 0%, #856876 46%, #e88448 76%, #08323f 77%, #041920 100%)",
+                      }}
+                    >
+                      <div
+                        className="absolute left-1/2 top-[56%] h-20 w-20 -translate-x-1/2 -translate-y-1/2 rounded-full opacity-90 blur-[2px]"
+                        style={{
+                          background: "radial-gradient(circle, #ffe4a8 0%, #f4ad6c 45%, transparent 72%)",
+                        }}
+                      />
+                      <svg
+                        viewBox="0 0 400 120"
+                        preserveAspectRatio="none"
+                        className="absolute inset-x-0 bottom-0 h-16 w-full"
+                      >
+                        <path
+                          d="M0 78 Q55 62 110 78 T220 78 T330 78 T400 76 L400 120 L0 120 Z"
+                          fill="#08323f"
+                          opacity="0.92"
                         />
+                        <path
+                          d="M0 92 Q65 80 130 92 T260 92 T400 90 L400 120 L0 120 Z"
+                          fill="#1ea49c"
+                          opacity="0.28"
+                        />
+                      </svg>
+                      <div className="absolute left-4 top-4 inline-flex items-center gap-1.5 rounded-full border border-emerald-400/45 bg-[#051a1d]/80 px-3 py-1 text-[10px] font-bold uppercase tracking-widest text-emerald-300 backdrop-blur-xs">
+                        <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 shadow-[0_0_8px_#34d399]" />
+                        Unlocked
                       </div>
                     </div>
-                  )}
-                </button>
-              </div>
 
-              <div className="mt-6 flex flex-col items-center gap-3">
-                <button
-                  onClick={start}
-                  className="btn-primary flex items-center gap-3 px-11 py-4 text-base font-bold tracking-[0.18em]"
-                >
-                  {I.play("h-5 w-5")}
-                  SET SAIL
-                </button>
+                    <div className="flex flex-1 flex-col justify-between p-6">
+                      <div>
+                        <div className="flex items-center justify-between">
+                          <h3 className="font-display text-xl font-black tracking-wide text-foam">
+                            Sea Mode
+                          </h3>
+                          <span className="text-[11px] font-semibold uppercase tracking-wider text-amber">
+                            Base Mode
+                          </span>
+                        </div>
+                        <p className="mt-2 text-xs leading-relaxed text-foam/70">
+                          Navigate the golden dusk swells into the Starlit Abyss and foggy Sunken Graveyard. Gather wisps and pass coastal Lighthouses.
+                        </p>
+                      </div>
 
-                <div className="flex flex-wrap items-center justify-center gap-2">
-                  <button
-                    onClick={() => openModal("settings")}
-                    className="inline-flex items-center gap-1.5 rounded-full border border-foam/18 bg-[#05141a]/65 px-3.5 py-1 text-xs font-medium text-foam/80 transition-colors hover:border-foam/35 hover:text-foam"
+                      <button
+                        type="button"
+                        onClick={() => startMode("sea")}
+                        className="btn-primary mt-5 flex w-full items-center justify-center gap-2 py-3.5 text-xs font-bold uppercase tracking-[0.2em]"
+                      >
+                        {I.play("h-4 w-4")}
+                        Play Sea Mode
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Card 2: Enchanted Mangrove */}
+                  <div
+                    onMouseEnter={() => setPreviewMode("mangrove")}
+                    onFocus={() => setPreviewMode("mangrove")}
+                    onClick={() => {
+                      if (!mangroveUnlocked) openModal("unlock");
+                    }}
+                    className={`group relative flex flex-col overflow-hidden rounded-3xl border bg-[#06181a]/84 backdrop-blur-md transition-all duration-300 ${
+                      !mangroveUnlocked ? "cursor-pointer" : ""
+                    } ${
+                      previewMode === "mangrove"
+                        ? "border-[#43E6C1]/80 shadow-[0_12px_45px_rgba(67,230,193,0.22)]"
+                        : "border-foam/15 hover:border-[#43E6C1]/50"
+                    }`}
                   >
-                    <span className="h-1.5 w-1.5 rounded-full bg-lumen" />
-                    {DIFF_INFO[settings.difficulty].label} ({DIFF_INFO[settings.difficulty].mult})
-                  </button>
-                  {best > 0 && (
-                    <button
-                      onClick={() => openModal("scores")}
-                      className="inline-flex items-center gap-1.5 rounded-full border border-amber/40 bg-amber/10 px-3.5 py-1 text-xs font-semibold tracking-wider text-amber transition-colors hover:bg-amber/20"
+                    {/* Midnight Mangrove visual preview banner */}
+                    <div
+                      className="relative h-40 w-full overflow-hidden"
+                      style={{
+                        background:
+                          "linear-gradient(180deg, #030c14 0%, #071C25 55%, #062D2B 75%, #041b1a 100%)",
+                      }}
                     >
-                      {I.flame("h-3.5 w-3.5")}
-                      BEST {best.toLocaleString("en-US")}
-                    </button>
-                  )}
-                  {!IS_NATIVE && (
-                    <a
-                      href={APK_DOWNLOAD_URL}
-                      download="SeaDrift.apk"
-                      className="inline-flex items-center gap-1.5 rounded-full border border-emerald-500/35 bg-emerald-950/45 px-3.5 py-1 text-xs font-semibold text-emerald-300 transition-all hover:border-emerald-400 hover:bg-emerald-900/60"
-                      title="Download Android APK for 100% offline play"
-                    >
-                      {I.download("h-3.5 w-3.5")}
-                      <span>Android APK</span>
-                      <span className="rounded bg-emerald-500/20 px-1.5 py-0.2 text-[9px] font-bold uppercase tracking-wider text-emerald-300">
-                        Offline
-                      </span>
-                    </a>
-                  )}
+                      <div
+                        className="absolute left-[38%] top-[34%] h-14 w-14 rounded-full opacity-80"
+                        style={{
+                          background: "radial-gradient(circle, #d9eef4 0%, #A8C9D2 45%, transparent 74%)",
+                        }}
+                      />
+                      {/* Mangrove silhouettes & glowing flora preview */}
+                      <svg
+                        viewBox="0 0 400 140"
+                        preserveAspectRatio="none"
+                        className="absolute inset-0 h-full w-full"
+                      >
+                        <path
+                          d="M0 0 L80 0 Q95 55 130 96 L95 140 L0 140 Z"
+                          fill="#092118"
+                          opacity="0.95"
+                        />
+                        <path
+                          d="M400 0 L320 0 Q305 55 270 96 L305 140 L400 140 Z"
+                          fill="#092118"
+                          opacity="0.95"
+                        />
+                        <path
+                          d="M45 90 Q78 102 82 140 M70 96 Q104 106 108 140 M355 90 Q322 102 318 140 M330 96 Q296 106 292 140"
+                          stroke="#183629"
+                          strokeWidth="4"
+                          fill="none"
+                        />
+                        <circle cx="96" cy="64" r="2.2" fill="#C9E88B" opacity="0.9" />
+                        <circle cx="145" cy="84" r="1.8" fill="#C9E88B" opacity="0.75" />
+                        <circle cx="290" cy="58" r="2.2" fill="#C9E88B" opacity="0.85" />
+                        <circle cx="88" cy="116" r="5" fill="#43E6C1" opacity="0.45" />
+                        <circle cx="312" cy="114" r="5" fill="#43E6C1" opacity="0.45" />
+                      </svg>
+                      <div
+                        className={`absolute left-4 top-4 inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-[10px] font-bold uppercase tracking-widest backdrop-blur-xs ${
+                          mangroveUnlocked
+                            ? "border-[#43E6C1]/50 bg-[#051d1b]/85 text-[#43E6C1]"
+                            : "border-amber/45 bg-[#121614]/85 text-amber"
+                        }`}
+                      >
+                        {mangroveUnlocked ? (
+                          <>
+                            <span className="h-1.5 w-1.5 rounded-full bg-[#43E6C1] shadow-[0_0_8px_#43E6C1]" />
+                            Unlocked
+                          </>
+                        ) : (
+                          <>
+                            {I.lock("h-3 w-3")}
+                            Locked
+                          </>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="flex flex-1 flex-col justify-between p-6">
+                      <div>
+                        <div className="flex items-center justify-between">
+                          <h3 className="font-display text-xl font-black tracking-wide text-foam">
+                            Enchanted Mangrove
+                          </h3>
+                          {!mangroveUnlocked && (
+                            <span className="flex items-center gap-1 text-xs font-bold text-amber">
+                              {I.flame("h-3.5 w-3.5")}
+                              {MANGROVE_UNLOCK_COST.toLocaleString("en-US")}
+                            </span>
+                          )}
+                        </div>
+
+                        {mangroveUnlocked ? (
+                          <p className="mt-2 text-xs leading-relaxed text-foam/70">
+                            Sail beneath towering midnight roots, shimmering fireflies, and glowing bioluminescent riverbanks warmed only by your lantern.
+                          </p>
+                        ) : (
+                          <div className="mt-3 space-y-2 rounded-2xl border border-foam/10 bg-ink/50 p-3.5">
+                            <div className="flex items-center justify-between text-xs">
+                              <span className="text-foam/65">Your Balance</span>
+                              <span className="font-bold text-foam">
+                                {lights.toLocaleString("en-US")} / {MANGROVE_UNLOCK_COST.toLocaleString("en-US")} Lights
+                              </span>
+                            </div>
+                            <div className="h-2 w-full overflow-hidden rounded-full bg-foam/10">
+                              <div
+                                className={`h-full rounded-full transition-all duration-300 ${
+                                  canUnlockMangrove
+                                    ? "bg-gradient-to-r from-[#43E6C1] to-amber shadow-[0_0_12px_rgba(67,230,193,0.65)]"
+                                    : "bg-gradient-to-r from-ember to-amber"
+                                }`}
+                                style={{
+                                  width: `${Math.min(100, (lights / MANGROVE_UNLOCK_COST) * 100)}%`,
+                                }}
+                              />
+                            </div>
+                            <div className="text-[11px] font-semibold">
+                              {canUnlockMangrove ? (
+                                <span className="text-[#43E6C1]">
+                                  Ready to unlock! Tap to open the gateway.
+                                </span>
+                              ) : (
+                                <span className="text-amber/90">
+                                  {remainingLights.toLocaleString("en-US")} more Lights needed
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+
+                      {mangroveUnlocked ? (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            startMode("mangrove");
+                          }}
+                          className="mt-5 flex w-full items-center justify-center gap-2 rounded-xl border border-[#43E6C1]/60 bg-gradient-to-b from-[#43E6C1] to-[#1aa88a] py-3.5 text-xs font-bold uppercase tracking-[0.2em] text-[#031915] shadow-[0_6px_24px_rgba(67,230,193,0.3)] transition-all hover:brightness-105 active:scale-[0.98]"
+                        >
+                          {I.play("h-4 w-4")}
+                          Play Mangrove
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            openModal("unlock");
+                          }}
+                          className={`mt-5 flex w-full items-center justify-center gap-2 rounded-xl border py-3.5 text-xs font-bold uppercase tracking-[0.18em] transition-all ${
+                            canUnlockMangrove
+                              ? "border-[#43E6C1]/70 bg-[#43E6C1]/18 text-[#43E6C1] shadow-[0_0_24px_rgba(67,230,193,0.22)] hover:bg-[#43E6C1]/28"
+                              : "border-foam/20 bg-foam/[0.06] text-foam/85 hover:border-amber/40 hover:text-amber"
+                          }`}
+                        >
+                          {I.lock("h-4 w-4")}
+                          {canUnlockMangrove ? "Unlock Mangrove" : "View Unlock Details"}
+                        </button>
+                      )}
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>
-
-            <div />
-          </div>
+          )}
         </div>
       )}
 
@@ -1070,10 +1357,16 @@ export default function App() {
                 {I.gear("h-4 w-4")} Settings
               </button>
               <button
-                onClick={toMenu}
+                onClick={toModes}
                 className="btn-ghost px-6 py-3 text-sm font-semibold tracking-wide"
               >
-                Return to harbor
+                Mode Selection
+              </button>
+              <button
+                onClick={toHome}
+                className="text-xs font-medium text-foam/50 transition-colors hover:text-foam pt-1"
+              >
+                Return to Home
               </button>
             </div>
           </div>
@@ -1081,7 +1374,7 @@ export default function App() {
         </div>
       )}
 
-      {/* ------------------------- GAME OVER ------------------------- */}
+      {/* ------------------------- REWARD SETTLEMENT / GAME OVER ------------------------- */}
       {state === "gameover" && final && (
         <div className="anim-modal-backdrop absolute inset-0 z-20 flex items-center justify-center bg-ink/70 px-4 backdrop-blur-md">
           <div className="glass-modal anim-modal-card relative w-full max-w-sm p-6 text-center shadow-[0_20px_60px_rgba(0,0,0,0.6)] sm:p-7">
@@ -1096,13 +1389,11 @@ export default function App() {
             </h2>
 
             {/* Score */}
-            <div className="mt-5">
+            <div className="mt-4">
               <div className="inline-flex items-center gap-1.5 rounded-full border border-foam/10 bg-foam/[0.04] px-3 py-0.5 text-[10px] font-semibold tracking-wider text-foam/60">
-                <span>{final.environment === "mangrove" ? "Mangrove" : "Sea"}</span>
+                <span>{final.environment === "mangrove" ? "Enchanted Mangrove" : "Sea Mode"}</span>
                 <span className="text-foam/30">·</span>
                 <span>{DIFF_INFO[final.difficulty].label}</span>
-                <span className="text-foam/30">·</span>
-                <span className="text-amber">{DIFF_INFO[final.difficulty].mult}</span>
               </div>
 
               <div className="mt-2 font-display text-5xl font-black text-amber [text-shadow:0_0_35px_rgba(255,180,84,0.45)] sm:text-6xl">
@@ -1117,9 +1408,9 @@ export default function App() {
             </div>
 
             {/* Stats */}
-            <div className="mt-6 grid grid-cols-3 gap-2">
+            <div className="mt-5 grid grid-cols-3 gap-2">
               {[
-                ["WISPS", `${final.wisps}`],
+                ["LIGHTS", `${final.wisps}`],
                 ["DISTANCE", `${final.dist}m`],
                 ["COMBO", `×${final.maxCombo}`],
               ].map(([label, value]) => (
@@ -1135,46 +1426,289 @@ export default function App() {
               ))}
             </div>
 
-            {/* Banked Lights progress */}
-            <div className="mt-3 flex items-center justify-between rounded-xl border border-amber/20 bg-amber/[0.06] px-3.5 py-2 text-xs">
-              <span className="flex items-center gap-1.5 font-semibold text-amber">
-                {I.flame("h-3.5 w-3.5")}
-                +{earnedLights} Lights banked
-              </span>
-              <span className="font-semibold text-foam/70">
-                {!mangroveUnlocked && canUnlockMangrove
-                  ? "Mangrove ready!"
-                  : `${lights.toLocaleString("en-US")} total`}
-              </span>
+            {/* Reward Settlement */}
+            <div className="mt-3 rounded-xl border border-amber/25 bg-amber/[0.07] p-3 text-left">
+              <div className="flex items-center justify-between text-xs">
+                <span className="flex items-center gap-1.5 font-bold text-amber">
+                  {I.flame("h-3.5 w-3.5")}
+                  +{earnedLights.toLocaleString("en-US")} Lights Earned
+                </span>
+                <span className="font-semibold text-foam/80">
+                  Total: {lights.toLocaleString("en-US")}
+                </span>
+              </div>
+              {!mangroveUnlocked && (
+                <div className="mt-2">
+                  <div className="h-1.5 w-full overflow-hidden rounded-full bg-foam/10">
+                    <div
+                      className={`h-full rounded-full ${canUnlockMangrove ? "bg-[#43E6C1]" : "bg-amber"}`}
+                      style={{
+                        width: `${Math.min(100, (lights / MANGROVE_UNLOCK_COST) * 100)}%`,
+                      }}
+                    />
+                  </div>
+                  <div className="mt-1 text-[10px] font-medium text-foam/65">
+                    {canUnlockMangrove
+                      ? "Enough Lights collected — Enchanted Mangrove ready to unlock!"
+                      : `${remainingLights.toLocaleString("en-US")} more Lights to unlock Enchanted Mangrove`}
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Actions */}
-            <div className="mt-6 flex flex-col gap-2.5 sm:flex-row">
+            <div className="mt-5 flex flex-col gap-2.5 sm:flex-row">
+              <button
+                onClick={toModes}
+                className="btn-primary flex flex-1 items-center justify-center gap-2 py-3 text-xs font-bold tracking-[0.14em]"
+              >
+                MODE SELECTION
+              </button>
               <button
                 onClick={restart}
-                className="btn-primary flex flex-1 items-center justify-center gap-2 py-3 text-xs font-bold tracking-[0.16em]"
+                className="btn-ghost flex flex-1 items-center justify-center gap-1.5 py-3 text-xs font-semibold tracking-wider"
               >
                 {I.play("h-3.5 w-3.5")} SAIL AGAIN
               </button>
-              <button
-                onClick={toMenu}
-                className="btn-ghost flex-1 py-3 text-xs font-semibold tracking-wider"
-              >
-                HARBOR
-              </button>
             </div>
 
-            {/* Discreet Leaderboard Link */}
-            <div className="mt-4 flex justify-center">
+            {/* Home & Leaderboard Links */}
+            <div className="mt-4 flex items-center justify-center gap-5">
+              <button
+                onClick={toHome}
+                className="text-[11px] font-medium text-foam/45 transition-colors hover:text-foam"
+              >
+                Home
+              </button>
+              <span className="text-foam/20">·</span>
               <button
                 onClick={() => setModal("scores")}
-                className="flex items-center gap-1.5 text-[11px] font-medium text-foam/40 transition-colors hover:text-amber"
+                className="flex items-center gap-1.5 text-[11px] font-medium text-foam/45 transition-colors hover:text-amber"
               >
                 {I.trophy("h-3.5 w-3.5")}
                 <span>Leaderboard</span>
               </button>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* ------------------------- MANGROVE UNLOCK / CONFIRMATION MODAL ------------------------- */}
+      {modal === "unlock" && (
+        <div
+          className="anim-modal-backdrop fixed inset-0 z-30 flex items-center justify-center bg-ink/75 px-4 backdrop-blur-md"
+          onClick={() => setModal("none")}
+        >
+          <div
+            className="glass-modal anim-modal-card w-full max-w-md overflow-hidden border-[#43E6C1]/25 shadow-[0_24px_80px_rgba(0,0,0,0.75)]"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header preview */}
+            <div
+              className="relative flex items-end justify-between p-5 pb-4"
+              style={{
+                background: "linear-gradient(180deg, #04151c 0%, #072826 100%)",
+              }}
+            >
+              <div>
+                <div className="inline-flex items-center gap-1.5 rounded-full border border-amber/35 bg-black/35 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-widest text-amber">
+                  {I.lock("h-3 w-3")}
+                  Locked Environment
+                </div>
+                <h3 className="mt-2 font-display text-2xl font-black text-foam">
+                  Enchanted Mangrove
+                </h3>
+              </div>
+              <button
+                onClick={() => setModal("none")}
+                aria-label="Close"
+                className="flex h-8 w-8 items-center justify-center rounded-full border border-white/10 bg-white/5 text-foam/60 hover:bg-white/10 hover:text-white"
+              >
+                {I.close("h-4 w-4")}
+              </button>
+            </div>
+
+            <div className="p-6">
+              <p className="text-xs leading-relaxed text-foam/70">
+                Venture into a midnight tropical river surrounded by towering arching roots, floating fireflies, glowing cyan flora, and dense mist.
+              </p>
+
+              {/* Currency summary */}
+              <div className="mt-4 space-y-2.5 rounded-2xl border border-foam/10 bg-ink/60 p-4 text-xs">
+                <div className="flex items-center justify-between">
+                  <span className="text-foam/65">Unlock Cost</span>
+                  <span className="flex items-center gap-1 font-bold text-amber">
+                    {I.flame("h-3.5 w-3.5")}
+                    {MANGROVE_UNLOCK_COST.toLocaleString("en-US")} Lights
+                  </span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-foam/65">Your Current Balance</span>
+                  <span className="font-bold text-foam">
+                    {lights.toLocaleString("en-US")} Lights
+                  </span>
+                </div>
+                <div className="border-t border-foam/10 pt-2 flex items-center justify-between">
+                  <span className="text-foam/65">
+                    {canUnlockMangrove ? "Balance After Purchase" : "Remaining Needed"}
+                  </span>
+                  <span className={`font-bold ${canUnlockMangrove ? "text-[#43E6C1]" : "text-ember"}`}>
+                    {canUnlockMangrove
+                      ? `${(lights - MANGROVE_UNLOCK_COST).toLocaleString("en-US")} Lights`
+                      : `${remainingLights.toLocaleString("en-US")} more Lights`}
+                  </span>
+                </div>
+              </div>
+
+              {canUnlockMangrove ? (
+                <div className="mt-5">
+                  <p className="mb-4 text-center text-xs font-medium text-foam/80">
+                    Confirm spending{" "}
+                    <span className="font-bold text-amber">
+                      {MANGROVE_UNLOCK_COST.toLocaleString("en-US")} Lights
+                    </span>{" "}
+                    to permanently unlock Enchanted Mangrove?
+                  </p>
+                  <div className="flex flex-col gap-2.5 sm:flex-row">
+                    <button
+                      type="button"
+                      onClick={confirmUnlockMangrove}
+                      className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-gradient-to-b from-[#43E6C1] to-[#1aa88a] py-3 text-xs font-bold uppercase tracking-[0.16em] text-[#031915] shadow-[0_6px_24px_rgba(67,230,193,0.35)] transition-all hover:brightness-105 active:scale-[0.98]"
+                    >
+                      {I.flame("h-4 w-4")}
+                      Confirm Unlock
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setModal("none")}
+                      className="btn-ghost flex-1 py-3 text-xs font-semibold tracking-wider"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="mt-5">
+                  <p className="mb-4 text-center text-xs leading-relaxed text-foam/65">
+                    Insufficient Lights. Sail through <span className="font-semibold text-amber">Sea Mode</span> and catch glowing wisps to gather the remaining Lights.
+                  </p>
+                  <div className="flex flex-col gap-2.5 sm:flex-row">
+                    <button
+                      type="button"
+                      onClick={() => startMode("sea")}
+                      className="btn-primary flex flex-1 items-center justify-center gap-2 py-3 text-xs font-bold uppercase tracking-[0.14em]"
+                    >
+                      {I.play("h-3.5 w-3.5")}
+                      Sail Sea Mode
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setModal("none")}
+                      className="btn-ghost flex-1 py-3 text-xs font-semibold tracking-wider"
+                    >
+                      Back
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ------------------------- UNLOCK GATEWAY ANIMATION ------------------------- */}
+      {unlockPhase !== "idle" && (
+        <div className="fixed inset-0 z-40 flex items-center justify-center overflow-hidden">
+          {/* Parting dark forest curtains revealing live Enchanted Mangrove behind */}
+          {(unlockPhase === "gathering" || unlockPhase === "gateway") && (
+            <>
+              <div
+                className={`pointer-events-none absolute inset-y-0 left-0 w-1/2 bg-gradient-to-r from-[#020d11] via-[#041b1e] to-[#062624]/95 ${
+                  unlockPhase === "gateway" ? "anim-gate-left" : "opacity-92"
+                }`}
+              />
+              <div
+                className={`pointer-events-none absolute inset-y-0 right-0 w-1/2 bg-gradient-to-l from-[#020d11] via-[#041b1e] to-[#062624]/95 ${
+                  unlockPhase === "gateway" ? "anim-gate-right" : "opacity-92"
+                }`}
+              />
+            </>
+          )}
+
+          {/* Converging glowing lights */}
+          {unlockPhase === "gathering" && (
+            <div className="pointer-events-none relative flex items-center justify-center">
+              {Array.from({ length: 16 }).map((_, i) => {
+                const ang = (i / 16) * Math.PI * 2;
+                const rad = 180 + (i % 3) * 55;
+                const sx = `${Math.round(Math.cos(ang) * rad)}px`;
+                const sy = `${Math.round(Math.sin(ang) * rad)}px`;
+                return (
+                  <span
+                    key={i}
+                    className="anim-light-gather absolute h-3.5 w-3.5 rounded-full"
+                    style={
+                      {
+                        "--sx": sx,
+                        "--sy": sy,
+                        animationDelay: `${(i % 4) * 55}ms`,
+                        background: i % 2 === 0 ? "#FFB85C" : "#43E6C1",
+                        boxShadow:
+                          i % 2 === 0
+                            ? "0 0 18px 4px rgba(255,184,92,0.85)"
+                            : "0 0 18px 4px rgba(67,230,193,0.85)",
+                      } as React.CSSProperties
+                    }
+                  />
+                );
+              })}
+              <div className="anim-unlock-seal flex h-20 w-20 items-center justify-center rounded-full border-2 border-amber/70 bg-amber/15 text-amber shadow-[0_0_45px_rgba(255,180,84,0.6)]">
+                {I.lock("h-8 w-8")}
+              </div>
+            </div>
+          )}
+
+          {/* Expanding gateway portal ring */}
+          {unlockPhase === "gateway" && (
+            <div className="pointer-events-none relative flex items-center justify-center">
+              <div className="anim-portal-ring h-48 w-48 rounded-full border-2 border-[#43E6C1]/85 shadow-[0_0_70px_rgba(67,230,193,0.75),inset_0_0_45px_rgba(255,184,92,0.4)]" />
+            </div>
+          )}
+
+          {/* Revealed celebration banner */}
+          {unlockPhase === "revealed" && (
+            <div className="anim-modal-card relative mx-4 w-full max-w-md rounded-3xl border border-[#43E6C1]/50 bg-[#051a1b]/88 p-7 text-center shadow-[0_24px_80px_rgba(0,0,0,0.7)] backdrop-blur-md">
+              <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl border border-[#43E6C1]/50 bg-[#43E6C1]/15 text-[#43E6C1] shadow-[0_0_28px_rgba(67,230,193,0.4)]">
+                {I.leaf("h-7 w-7")}
+              </div>
+              <div className="mt-4 text-[10px] font-bold uppercase tracking-[0.34em] text-[#43E6C1]">
+                Gateway Opened
+              </div>
+              <h3 className="mt-1.5 font-display text-2xl font-black tracking-wide text-foam sm:text-3xl">
+                ENCHANTED MANGROVE UNLOCKED
+              </h3>
+              <p className="mt-2.5 text-xs leading-relaxed text-foam/75">
+                The midnight river awaits. Sail through ancient arching roots, fireflies, and glowing bioluminescent waters.
+              </p>
+              <div className="mt-6 flex flex-col gap-2.5 sm:flex-row">
+                <button
+                  type="button"
+                  onClick={() => startMode("mangrove")}
+                  className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-gradient-to-b from-[#43E6C1] to-[#1aa88a] py-3.5 text-xs font-bold uppercase tracking-[0.18em] text-[#031915] shadow-[0_6px_24px_rgba(67,230,193,0.35)] transition-all hover:brightness-105"
+                >
+                  {I.play("h-4 w-4")}
+                  Enter Mangrove
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setUnlockPhase("idle")}
+                  className="btn-ghost flex-1 py-3.5 text-xs font-semibold tracking-wider"
+                >
+                  Mode Selection
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       )}
 

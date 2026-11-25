@@ -44,6 +44,7 @@ export type GameState = "menu" | "playing" | "paused" | "gameover";
 
 export interface HudData {
   score: number;
+  wisps: number;
   combo: number;
   comboT: number;
   energy: number;
@@ -52,6 +53,7 @@ export interface HudData {
 }
 
 export interface RunStats {
+  runId: number;
   score: number;
   wisps: number;
   dist: number;
@@ -889,6 +891,7 @@ export class GameEngine {
   private maxCombo = 1;
   private energy = 100;
   private wispsCaught = 0;
+  private runId = 0;
   private invulnT = 0;
   private shake = 0;
   private godMode = false;
@@ -1128,8 +1131,18 @@ export class GameEngine {
     }
   }
 
-  startRun() {
+  /** Switch the live 3D menu preview environment (e.g., on Home or Mode Selection hover/reveal). */
+  previewEnvironment(env: EnvironmentMode, snap = false) {
+    if (this.state !== "menu") return;
+    if (this.environment === env && !snap) return;
+    this.environment = env;
+    this.syncEnvironmentVisuals(snap);
+  }
+
+  startRun(overrideEnv?: EnvironmentMode) {
     if (this.state === "playing") return;
+    if (overrideEnv) this.environment = overrideEnv;
+    this.runId++;
     const tune = DIFF_TUNING[this.difficulty];
     this.clearEntities();
     this.syncEnvironmentVisuals(true);
@@ -4160,6 +4173,7 @@ export class GameEngine {
     this.haptic([90, 60, 140]);
     this.addShake(0.2);
     this.cb.onGameOver({
+      runId: this.runId,
       score: Math.floor(this.score),
       wisps: this.wispsCaught,
       dist: Math.floor(-this.boat.position.z / 10),
@@ -4989,6 +5003,7 @@ export class GameEngine {
     if (this.state === "playing") {
       this.cb.onHud({
         score: this.score,
+        wisps: this.wispsCaught,
         combo: this.combo,
         comboT: this.comboT,
         energy: this.energy,

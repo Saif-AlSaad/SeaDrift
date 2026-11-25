@@ -4,7 +4,7 @@ export type SunGlareSetting = "soft" | "minimal";
 export type TouchControl = "drag" | "follow" | "tilt";
 export type EnvironmentMode = "sea" | "mangrove";
 
-export const MANGROVE_UNLOCK_COST = 150;
+export const MANGROVE_UNLOCK_COST = 2000;
 
 export interface GameSettings {
   volume: number; // 0..1
