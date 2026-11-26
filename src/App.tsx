@@ -178,7 +178,7 @@ const APK_DOWNLOAD_URL = "https://github.com/Saif-AlSaad/SeaDrift/releases/lates
 const IS_TOUCH =
   typeof window !== "undefined" &&
   (window.matchMedia?.("(pointer: coarse)").matches || "ontouchstart" in window);
-const CAN_FULLSCREEN = typeof document !== "undefined" && !!document.fullscreenEnabled;
+const CAN_FULLSCREEN = typeof document !== "undefined" && !!document.fullscreenEnabled && !IS_NATIVE;
 const SAFE_TL = {
   top: "max(1rem, env(safe-area-inset-top))",
   left: "max(1rem, env(safe-area-inset-left))",
@@ -1054,14 +1054,16 @@ export default function App() {
             >
               {I.gear("h-5 w-5")}
             </button>
-            <button
-              onClick={toggleMute}
-              aria-label={settings.muted ? "Unmute" : "Mute"}
-              title={settings.muted ? "Unmute" : "Mute"}
-              className="icon-btn flex h-11 w-11 items-center justify-center text-foam/85"
-            >
-              {settings.muted ? I.soundOff("h-5 w-5") : I.soundOn("h-5 w-5")}
-            </button>
+            {!IS_NATIVE && (
+              <button
+                onClick={toggleMute}
+                aria-label={settings.muted ? "Unmute" : "Mute"}
+                title={settings.muted ? "Unmute" : "Mute"}
+                className="icon-btn flex h-11 w-11 items-center justify-center text-foam/85"
+              >
+                {settings.muted ? I.soundOff("h-5 w-5") : I.soundOn("h-5 w-5")}
+              </button>
+            )}
           </div>
 
           {menuView === "home" ? (
