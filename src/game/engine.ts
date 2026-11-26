@@ -9,11 +9,9 @@ import { UnrealBloomPass } from "three/examples/jsm/postprocessing/UnrealBloomPa
 import { OutputPass } from "three/examples/jsm/postprocessing/OutputPass.js";
 import { mergeVertices } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import type { GameAudio } from "./audio";
+import { addBoatDecor, BOAT_SPECS, makeBoatSkin, makeHullShape, sailPlan, type BoatLevel } from "./boatSkins";
 import type { Difficulty, EnvironmentMode, GameSettings } from "./storage";
 import {
-  makeDetailedWoodTexture,
-  makeDeckTexture,
-  makeDetailedClothTexture,
   makeFishScaleTexture,
   makeTunaGeometry,
   makeDoradoGeometry,
@@ -846,6 +844,8 @@ export class GameEngine {
 
   // boat
   private boat!: THREE.Group;
+  private boatLevel: BoatLevel = 1;
+  private glowTex?: THREE.Texture;
   private rig!: THREE.Group;
   private rudder!: THREE.Mesh;
   private sails: Sail[] = [];
@@ -1074,6 +1074,7 @@ export class GameEngine {
       this.islandGeos.push(makeIslandGeometry(2.1 + i * 3.7));
     }
     this.buildIslands();
+    this.glowTex = glowTex;
     this.buildBoat(glowTex);
     this.buildPools(glowTex);
     this.buildFishes();
@@ -1184,6 +1185,9 @@ export class GameEngine {
     this.haptics = s.haptics;
     if (!s.screenShake) this.shake = 0;
     this.sunGlareMult = s.sunGlare === "minimal" ? 0.42 : 1.0;
+    if (s.boatLevel && s.boatLevel !== this.boatLevel) {
+      this.setBoatLevel(s.boatLevel);
+    }
 
     if (this.state === "menu" || prevEnv !== this.environment) {
       this.syncEnvironmentVisuals(this.state === "menu");
@@ -1994,62 +1998,39 @@ export class GameEngine {
 
   /* ================= build: boat ================= */
 
-  private buildBoat(glowTex: THREE.Texture) {
+  /** Swap the boat skin (1 Heritage Oak, 2 Teal Voyager, 3 Starlight Royal). Same size and animation. */
+  setBoatLevel(level: BoatLevel) {
+    if (level === this.boatLevel) return;
+    this.boatLevel = level;
+    const old = this.boat;
+    if (!old || !this.glowTex) return;
+    this.scene.remove(old);
+    this.buildBoat(this.glowTex, level);
+    this.boat.position.copy(old.position);
+    this.boat.rotation.copy(old.rotation);
+    old.traverse((o) => {
+      if (o instanceof THREE.Mesh) o.geometry.dispose();
+    });
+  }
+
+  private buildBoat(glowTex: THREE.Texture, level: BoatLevel = this.boatLevel) {
     const boat = new THREE.Group();
-    const wood = makeDetailedWoodTexture();
-    const deckTex = makeDeckTexture();
-    const woodMat = new THREE.MeshStandardMaterial({
-      map: wood,
-      bumpMap: wood,
-      bumpScale: 0.55,
-      roughness: 0.74,
-      side: THREE.DoubleSide,
-    });
-    const deckMat = new THREE.MeshStandardMaterial({
-      map: deckTex,
-      bumpMap: deckTex,
-      bumpScale: 0.4,
-      roughness: 0.82,
-      side: THREE.DoubleSide,
-    });
-    const hullMat = woodMat.clone();
-    hullMat.vertexColors = true;
-    hullMat.roughness = 0.68;
+    const skin = makeBoatSkin(level);
+    const woodMat = skin.wood;
+    const deckMat = skin.deck;
+    const hullMat = skin.hull;
+    const darkWood = skin.dark;
+    const caulk = skin.caulk;
+    const paint = skin.paint;
+    const metal = skin.metal;
+    const ropeMat = skin.rope;
     this.hullMat = hullMat;
-    const darkWood = new THREE.MeshStandardMaterial({ color: 0x3a2413, roughness: 0.84 });
-    const caulk = new THREE.MeshStandardMaterial({ color: 0x140c06, roughness: 1 });
-    const paint = new THREE.MeshStandardMaterial({
-      color: 0x263a38,
-      roughness: 0.58,
-      metalness: 0.18,
-    });
-    const metal = new THREE.MeshStandardMaterial({
-      color: 0x22211e,
-      roughness: 0.44,
-      metalness: 0.72,
-    });
-    const ropeMat = new THREE.MeshStandardMaterial({ color: 0x8a7350, roughness: 1 });
 
     /* ---- lofted clinker hull ---- */
     const NS = 30;
     const NR = 18;
-    const prof = (t: number) => {
-      const fb = Math.pow(Math.sin(Math.min(1, t / 0.6) * Math.PI * 0.5), 0.85);
-      const fs = 1 - 0.32 * smooth(t, 0.66, 1);
-      return {
-        beam: 0.95 * fb * fs,
-        top: 0.62 + 0.55 * Math.pow(1 - t, 2.6) + 0.08 * t * t * t,
-        keel: -0.34 * (0.25 + 0.75 * fb) + 0.3 * Math.pow(1 - t, 3),
-        z: -2.35 + 4.15 * t,
-        rake: 0.3 * (1 - t) * (1 - t),
-      };
-    };
-    const hx = (aa: number, p: ReturnType<typeof prof>) =>
-      Math.pow(aa, 0.55) * p.beam;
-    const hy = (aa: number, p: ReturnType<typeof prof>) =>
-      p.keel + (p.top - p.keel) * Math.pow(aa, 2.3);
-    const hz = (aa: number, p: ReturnType<typeof prof>) =>
-      p.z - p.rake * Math.pow(aa, 2.3);
+    const { prof, hx, hy, hz } = makeHullShape(level);
+    const plan = sailPlan(level);
 
     const pos: number[] = [], uv: number[] = [], hcol: number[] = [], idx: number[] = [];
     for (let i = 0; i <= NS; i++) {
@@ -2118,7 +2099,7 @@ export class GameEngine {
       boat.add(new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(rail), 40, 0.055, 7), darkWood));
       boat.add(new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(inner), 40, 0.026, 6), woodMat));
     }
-    for (const aa of [0.3, 0.52, 0.72, 0.9]) {
+    if (level !== 2) for (const aa of [0.3, 0.52, 0.72, 0.9]) {
       for (const side of [-1, 1]) {
         const pts: THREE.Vector3[] = [];
         for (let i = 0; i <= 20; i++) {
@@ -2128,7 +2109,7 @@ export class GameEngine {
         boat.add(new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 30, 0.011, 4), caulk));
       }
     }
-    for (const side of [-1, 1]) {
+    if (level !== 2) for (const side of [-1, 1]) {
       const pts: THREE.Vector3[] = [];
       for (let i = 0; i <= 20; i++) {
         const p = prof(i / 20);
@@ -2139,7 +2120,7 @@ export class GameEngine {
     }
 
     /* ---- visible ribs & stringers inside the hull ---- */
-    for (let k = 0; k < 7; k++) {
+    if (level !== 2) for (let k = 0; k < 7; k++) {
       const t = 0.14 + k * 0.115;
       const p = prof(t);
       const pts: THREE.Vector3[] = [];
@@ -2156,14 +2137,16 @@ export class GameEngine {
     }
 
     /* ---- transom, stem, thwarts ---- */
-    const transom = new THREE.Mesh(new THREE.BoxGeometry(stern.beam * 1.85, 0.36, 0.075), woodMat);
-    transom.position.set(0, stern.top - 0.21, stern.z + 0.035);
-    boat.add(transom);
-    const transomTrim = new THREE.Mesh(new THREE.BoxGeometry(stern.beam * 1.9, 0.045, 0.095), darkWood);
-    transomTrim.position.set(0, stern.top - 0.025, stern.z + 0.035);
-    boat.add(transomTrim);
+    if (level !== 3) {
+      const transom = new THREE.Mesh(new THREE.BoxGeometry(stern.beam * 1.85, 0.36, 0.075), woodMat);
+      transom.position.set(0, stern.top - 0.21, stern.z + 0.035);
+      boat.add(transom);
+      const transomTrim = new THREE.Mesh(new THREE.BoxGeometry(stern.beam * 1.9, 0.045, 0.095), darkWood);
+      transomTrim.position.set(0, stern.top - 0.025, stern.z + 0.035);
+      boat.add(transomTrim);
+    }
     boat.add(rod(new THREE.Vector3(0, 0.5, -2.32), new THREE.Vector3(0, 1.2, -2.55), 0.042, darkWood));
-    for (const t of [0.38, 0.72]) {
+    if (level === 1) for (const t of [0.38, 0.72]) {
       const p = prof(t);
       const bench = new THREE.Mesh(new THREE.BoxGeometry(p.beam * 1.78, 0.075, 0.32), woodMat);
       bench.position.set(0, p.top - 0.15, p.z);
@@ -2175,52 +2158,54 @@ export class GameEngine {
       }
     }
 
-    /* ---- working gear: crate, barrel, rope coil, bucket, oar ---- */
-    const crate = new THREE.Group();
-    crate.position.set(0.3, 0.45, 0.34);
-    crate.rotation.y = 0.3;
-    crate.add(new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.32, 0.42), woodMat));
-    for (let k = 0; k < 3; k++) {
-      const slat = new THREE.Mesh(new THREE.BoxGeometry(0.44, 0.025, 0.045), darkWood);
-      slat.position.set(0, -0.1 + k * 0.1, 0.215);
-      crate.add(slat);
-    }
-    boat.add(crate);
+    if (level === 1) {
+      /* ---- working gear: crate, barrel, rope coil, bucket, oar ---- */
+      const crate = new THREE.Group();
+      crate.position.set(0.3, 0.45, 0.34);
+      crate.rotation.y = 0.3;
+      crate.add(new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.32, 0.42), woodMat));
+      for (let k = 0; k < 3; k++) {
+        const slat = new THREE.Mesh(new THREE.BoxGeometry(0.44, 0.025, 0.045), darkWood);
+        slat.position.set(0, -0.1 + k * 0.1, 0.215);
+        crate.add(slat);
+      }
+      boat.add(crate);
 
-    const barrel = new THREE.Group();
-    barrel.position.set(-0.34, 0.5, 1.2);
-    barrel.add(new THREE.Mesh(new THREE.CylinderGeometry(0.17, 0.155, 0.42, 12), woodMat));
-    for (const yy of [-0.13, 0.13]) {
-      const hoop = new THREE.Mesh(new THREE.TorusGeometry(0.171, 0.012, 5, 14), metal);
-      hoop.rotation.x = Math.PI / 2;
-      hoop.position.y = yy;
-      barrel.add(hoop);
-    }
-    boat.add(barrel);
+      const barrel = new THREE.Group();
+      barrel.position.set(-0.34, 0.5, 1.2);
+      barrel.add(new THREE.Mesh(new THREE.CylinderGeometry(0.17, 0.155, 0.42, 12), woodMat));
+      for (const yy of [-0.13, 0.13]) {
+        const hoop = new THREE.Mesh(new THREE.TorusGeometry(0.171, 0.012, 5, 14), metal);
+        hoop.rotation.x = Math.PI / 2;
+        hoop.position.y = yy;
+        barrel.add(hoop);
+      }
+      boat.add(barrel);
 
-    for (let k = 0; k < 3; k++) {
-      const coil = new THREE.Mesh(new THREE.TorusGeometry(0.105 + k * 0.018, 0.014, 6, 18), ropeMat);
-      coil.rotation.x = Math.PI / 2;
-      coil.position.set(-0.48, 0.31 + k * 0.025, 0.82);
-      boat.add(coil);
-    }
-    const bucket = new THREE.Mesh(new THREE.CylinderGeometry(0.115, 0.09, 0.2, 10), woodMat);
-    bucket.position.set(0.45, 0.38, 1.02);
-    boat.add(bucket);
-    const bucketRim = new THREE.Mesh(new THREE.TorusGeometry(0.113, 0.011, 5, 12), metal);
-    bucketRim.rotation.x = Math.PI / 2;
-    bucketRim.position.set(0.45, 0.48, 1.02);
-    boat.add(bucketRim);
+      for (let k = 0; k < 3; k++) {
+        const coil = new THREE.Mesh(new THREE.TorusGeometry(0.105 + k * 0.018, 0.014, 6, 18), ropeMat);
+        coil.rotation.x = Math.PI / 2;
+        coil.position.set(-0.48, 0.31 + k * 0.025, 0.82);
+        boat.add(coil);
+      }
+      const bucket = new THREE.Mesh(new THREE.CylinderGeometry(0.115, 0.09, 0.2, 10), woodMat);
+      bucket.position.set(0.45, 0.38, 1.02);
+      boat.add(bucket);
+      const bucketRim = new THREE.Mesh(new THREE.TorusGeometry(0.113, 0.011, 5, 12), metal);
+      bucketRim.rotation.x = Math.PI / 2;
+      bucketRim.position.set(0.45, 0.48, 1.02);
+      boat.add(bucketRim);
 
-    boat.add(rod(new THREE.Vector3(-0.88, 0.76, 0.12), new THREE.Vector3(0.96, 0.69, 1.46), 0.027, darkWood));
-    const blade = new THREE.Mesh(new THREE.BoxGeometry(0.13, 0.022, 0.44), woodMat);
-    blade.position.set(1.08, 0.685, 1.66);
-    blade.rotation.set(0.16, -0.62, 0);
-    boat.add(blade);
+      boat.add(rod(new THREE.Vector3(-0.88, 0.76, 0.12), new THREE.Vector3(0.96, 0.69, 1.46), 0.027, darkWood));
+      const blade = new THREE.Mesh(new THREE.BoxGeometry(0.13, 0.022, 0.44), woodMat);
+      blade.position.set(1.08, 0.685, 1.66);
+      blade.rotation.set(0.16, -0.62, 0);
+      boat.add(blade);
+    }
 
     /* ---- mast, hoops and standing/running rigging ---- */
     const mastZ = -0.35;
-    boat.add(rod(new THREE.Vector3(0, 0.28, mastZ), new THREE.Vector3(0, 3.6, mastZ), 0.05, darkWood));
+    boat.add(rod(new THREE.Vector3(0, 0.28, mastZ), new THREE.Vector3(0, 3.6, mastZ), 0.05, level === 2 ? metal : darkWood));
     for (const yy of [1.15, 2.25, 3.25]) {
       const hoop = new THREE.Mesh(new THREE.TorusGeometry(0.052, 0.009, 5, 10), metal);
       hoop.rotation.x = Math.PI / 2;
@@ -2228,52 +2213,20 @@ export class GameEngine {
       boat.add(hoop);
     }
     const rigging = new THREE.BufferGeometry();
-    rigging.setAttribute("position", new THREE.Float32BufferAttribute([
-      0, 3.58, mastZ, 0, 1.2, -2.62,
-      0, 3.58, mastZ, 0, 0.75, 1.78,
-      0, 3.5, mastZ, 0.92, 0.66, 0.2,
-      0, 3.5, mastZ, -0.92, 0.66, 0.2,
-      0, 2.8, mastZ, 0, 0.97, 1.8,
-      0, 3.2, 1.35, 0, 0.68, 1.7,
-    ], 3));
+    rigging.setAttribute("position", new THREE.Float32BufferAttribute(plan.rig, 3));
     boat.add(new THREE.LineSegments(rigging, new THREE.LineBasicMaterial({ color: 0x2a2016 })));
 
-    /* ---- woven lateen sails ---- */
-    const cloth = makeDetailedClothTexture();
-    const sailMat = new THREE.MeshStandardMaterial({
-      map: cloth,
-      roughness: 0.93,
-      side: THREE.DoubleSide,
-      emissive: 0xffb070,
-      emissiveMap: cloth,
-      emissiveIntensity: 0.18,
-    });
+    /* ---- woven sails ---- */
+    const cloth = skin.cloth;
+    const sailMat = skin.sail;
     this.rig = new THREE.Group();
     this.rig.position.set(0, 0, mastZ);
-    this.rig.add(rod(new THREE.Vector3(0, 0.95, 0), new THREE.Vector3(0, 0.93, 1.85), 0.035, darkWood));
-    this.rig.add(rod(new THREE.Vector3(0, 2.8, 0), new THREE.Vector3(0, 3.25, 1.4), 0.03, darkWood));
-    const main: Sail = {
-      geo: makeSailGeometry(SAIL_N),
-      c: [
-        new THREE.Vector3(0, 1.0, 0.06),
-        new THREE.Vector3(0, 0.97, 1.78),
-        new THREE.Vector3(0, 2.78, 0.06),
-        new THREE.Vector3(0, 3.2, 1.34),
-      ],
-      k: 1,
-    };
+    this.rig.add(rod(plan.boom[0], plan.boom[1], 0.035, level === 2 ? metal : darkWood));
+    if (plan.yard) this.rig.add(rod(plan.yard[0], plan.yard[1], 0.03, darkWood));
+    const main: Sail = { geo: makeSailGeometry(SAIL_N), c: plan.main.c, k: plan.main.k };
     this.rig.add(new THREE.Mesh(main.geo, sailMat));
     boat.add(this.rig);
-    const jib: Sail = {
-      geo: makeSailGeometry(SAIL_N),
-      c: [
-        new THREE.Vector3(0, 1.22, -2.58),
-        new THREE.Vector3(0, 1.0, -0.72),
-        new THREE.Vector3(0, 3.35, -0.42),
-        new THREE.Vector3(0, 3.35, -0.42),
-      ],
-      k: 0.6,
-    };
+    const jib: Sail = { geo: makeSailGeometry(SAIL_N), c: plan.jib.c, k: plan.jib.k };
     boat.add(new THREE.Mesh(jib.geo, sailMat));
     this.sails = [main, jib];
     this.updateSails(0.25);
@@ -2370,6 +2323,7 @@ export class GameEngine {
     }
     boat.add(this.lanternPivot);
 
+    addBoatDecor(boat, level, skin, { prof, hx, hy, hz });
     boat.scale.setScalar(1.15);
     this.boat = boat;
     this.scene.add(boat);
@@ -4320,9 +4274,11 @@ export class GameEngine {
 
   private damage(amount: number, shake: number, wx: number, wz: number) {
     if (this.state !== "playing") return;
-    this.haptic(amount >= 22 ? [45, 35, 70] : 40);
+    const hpMult = BOAT_SPECS[this.boatLevel].hpMult;
+    const effective = Math.max(1, Math.round(amount / hpMult));
+    this.haptic(effective >= 22 ? [45, 35, 70] : 40);
     this.invulnT = 1.0;
-    if (!this.godMode) this.energy = Math.max(0, this.energy - amount);
+    if (!this.godMode) this.energy = Math.max(0, this.energy - effective);
     this.combo = 1;
     this.comboT = 0;
     this.mSwarmChain = 0;
@@ -4331,7 +4287,7 @@ export class GameEngine {
     this.addShake(shake);
     this.cb.onFlash("hit");
     this.tmpV2.set(wx, this.boatY + 2.2, wz);
-    this.popup(this.tmpV2, `−${amount} LAMP`, "danger");
+    this.popup(this.tmpV2, `−${effective} LAMP`, "danger");
     if (this.energy <= 0) this.endRun();
   }
 
@@ -4593,9 +4549,13 @@ export class GameEngine {
     if (this.mBankScrapeCd > 0) this.mBankScrapeCd = Math.max(0, this.mBankScrapeCd - dt);
     if (this.mLilyRustleCd > 0) this.mLilyRustleCd = Math.max(0, this.mLilyRustleCd - dt);
     if (this.state === "playing") {
+      const spec = BOAT_SPECS[this.boatLevel];
       const swarmBoost = isMangrove ? 2.5 * smooth(this.mSwarmBoostT, 0, 0.85) : 0;
       const dragMult = isMangrove ? 1 - 0.38 * this.mLilyDrag : 1;
-      this.speed = (tune.baseSpeed + tune.maxExtraSpeed * Math.pow(d, 0.8) + swarmBoost) * dragMult;
+      this.speed =
+        (tune.baseSpeed + tune.maxExtraSpeed * Math.pow(d, 0.8) + swarmBoost) *
+        spec.speedMult *
+        dragMult;
     }
     else if (over) this.speed += (3.5 - this.speed) * Math.min(1, rawDt * 0.8);
     else this.speed += (12 - this.speed) * Math.min(1, rawDt * 2);
@@ -5007,7 +4967,8 @@ export class GameEngine {
         }
       }
 
-      const drain = tune.baseDrain + tune.extraDrain * d + this.storm * tune.stormDrain;
+      const hpMult = BOAT_SPECS[this.boatLevel].hpMult;
+      const drain = (tune.baseDrain + tune.extraDrain * d + this.storm * tune.stormDrain) / (1 + (hpMult - 1) * 0.45);
       if (!this.godMode) this.energy = Math.max(0, this.energy - drain * dt);
       this.score += this.speed * dt * 0.5 * tune.scoreMultiplier;
       this.comboT = Math.max(0, this.comboT - dt);

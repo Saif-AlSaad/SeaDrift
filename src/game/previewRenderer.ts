@@ -2,6 +2,7 @@
    Shares a single offscreen WebGLRenderer across all mounted <EnvironmentPreview>
    canvases so desktop and Android WebViews never hit WebGL context limits. */
 import * as THREE from "three";
+import { addBoatDecor, makeBoatSkin, makeHullShape, sailPlan, type BoatLevel } from "./boatSkins";
 import type { EnvironmentMode } from "./storage";
 import {
   ISLAND_FRAG,
@@ -519,10 +520,286 @@ function buildPreviewBoat(
 
 /* ---------------- scene shader factory ---------------- */
 
+/** Build the accurate 3D boat model for a given BoatLevel (1, 2, or 3) using boatSkins.ts. */
+function buildSkinnedPreviewBoat(
+  level: BoatLevel,
+  glowTex: THREE.Texture,
+  lanternIntensity = 42,
+): PreviewBoat {
+  const boat = new THREE.Group();
+  const skin = makeBoatSkin(level);
+  const { wood: woodMat, deck: deckMat, hull: hullMat, dark: darkWood, caulk, paint, metal, sail: sailMat } = skin;
+  const { prof, hx, hy, hz } = makeHullShape(level);
+  const plan = sailPlan(level);
+
+  const NS = 28;
+  const NR = 16;
+  const pos: number[] = [];
+  const uv: number[] = [];
+  const hcol: number[] = [];
+  const idx: number[] = [];
+  for (let i = 0; i <= NS; i++) {
+    const p = prof(i / NS);
+    for (let j = 0; j <= NR; j++) {
+      const a = (j / NR) * 2 - 1;
+      const aa = Math.abs(a);
+      const y = hy(aa, p);
+      pos.push(Math.sign(a) * hx(aa, p), y, hz(aa, p));
+      uv.push((i / NS) * 3.2, aa);
+      const band = 1 - smooth(Math.abs(y - 0.06), 0, 0.19);
+      const grain = 0.93 + 0.07 * Math.sin(i * 1.3 + j * 0.72);
+      hcol.push(grain * (1 - band * 0.5), grain * (1 - band * 0.62), grain * (1 - band * 0.68));
+    }
+  }
+  for (let i = 0; i < NS; i++) {
+    for (let j = 0; j < NR; j++) {
+      const a = i * (NR + 1) + j;
+      const c = a + NR + 1;
+      idx.push(a, c, a + 1, a + 1, c, c + 1);
+    }
+  }
+  const stern = prof(1);
+  const ci = pos.length / 3;
+  pos.push(0, stern.keel + (stern.top - stern.keel) * 0.55, stern.z);
+  uv.push(3.2, 0.5);
+  hcol.push(0.85, 0.85, 0.85);
+  for (let j = 0; j < NR; j++) idx.push(NS * (NR + 1) + j, ci, NS * (NR + 1) + j + 1);
+
+  const hullGeo = new THREE.BufferGeometry();
+  hullGeo.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
+  hullGeo.setAttribute("uv", new THREE.Float32BufferAttribute(uv, 2));
+  hullGeo.setAttribute("color", new THREE.Float32BufferAttribute(hcol, 3));
+  hullGeo.setIndex(idx);
+  hullGeo.computeVertexNormals();
+  boat.add(new THREE.Mesh(hullGeo, hullMat));
+
+  const fpos: number[] = [];
+  const fuv: number[] = [];
+  const fidx: number[] = [];
+  for (let i = 0; i <= NS; i++) {
+    const t = i / NS;
+    const p = prof(t);
+    const y = Math.max(0.26, p.keel + 0.14);
+    fpos.push(-p.beam * 0.84, y, p.z, p.beam * 0.84, y, p.z);
+    fuv.push(0, t * 3, 1, t * 3);
+    if (i < NS) fidx.push(i * 2, i * 2 + 2, i * 2 + 1, i * 2 + 1, i * 2 + 2, i * 2 + 3);
+  }
+  const floorGeo = new THREE.BufferGeometry();
+  floorGeo.setAttribute("position", new THREE.Float32BufferAttribute(fpos, 3));
+  floorGeo.setAttribute("uv", new THREE.Float32BufferAttribute(fuv, 2));
+  floorGeo.setIndex(fidx);
+  floorGeo.computeVertexNormals();
+  boat.add(new THREE.Mesh(floorGeo, deckMat));
+
+  for (const side of [-1, 1]) {
+    const rail: THREE.Vector3[] = [];
+    const inner: THREE.Vector3[] = [];
+    for (let i = 0; i <= 16; i++) {
+      const p = prof(i / 16);
+      rail.push(new THREE.Vector3(side * p.beam, p.top + 0.02, p.z - p.rake));
+      inner.push(new THREE.Vector3(side * p.beam * 0.9, p.top - 0.04, p.z - p.rake));
+    }
+    boat.add(new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(rail), 28, 0.055, 6), darkWood));
+    boat.add(new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(inner), 24, 0.026, 6), woodMat));
+  }
+  if (level !== 2) {
+    for (const aa of [0.35, 0.72]) {
+      for (const side of [-1, 1]) {
+        const pts: THREE.Vector3[] = [];
+        for (let i = 0; i <= 14; i++) {
+          const p = prof(i / 14);
+          pts.push(new THREE.Vector3(side * hx(aa, p) * 1.008, hy(aa, p), hz(aa, p)));
+        }
+        boat.add(new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 20, 0.011, 4), caulk));
+      }
+    }
+    for (const side of [-1, 1]) {
+      const pts: THREE.Vector3[] = [];
+      for (let i = 0; i <= 16; i++) {
+        const p = prof(i / 16);
+        pts.push(new THREE.Vector3(side * hx(0.62, p) * 1.014, hy(0.62, p), hz(0.62, p)));
+      }
+      boat.add(new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 20, 0.02, 5), paint));
+    }
+  }
+  if (level !== 3) {
+    const transom = new THREE.Mesh(new THREE.BoxGeometry(stern.beam * 1.85, 0.36, 0.075), woodMat);
+    transom.position.set(0, stern.top - 0.21, stern.z + 0.035);
+    boat.add(transom);
+  }
+  boat.add(rod(new THREE.Vector3(0, 0.5, -2.32), new THREE.Vector3(0, 1.2, -2.55), 0.042, darkWood));
+
+  const mastZ = -0.35;
+  boat.add(rod(new THREE.Vector3(0, 0.28, mastZ), new THREE.Vector3(0, 3.6, mastZ), 0.05, level === 2 ? metal : darkWood));
+  for (const yy of [1.15, 2.25, 3.25]) {
+    const hoop = new THREE.Mesh(new THREE.TorusGeometry(0.052, 0.009, 5, 10), metal);
+    hoop.rotation.x = Math.PI / 2;
+    hoop.position.set(0, yy, mastZ);
+    boat.add(hoop);
+  }
+  const rigGeo = new THREE.BufferGeometry();
+  rigGeo.setAttribute("position", new THREE.Float32BufferAttribute(plan.rig, 3));
+  boat.add(new THREE.LineSegments(rigGeo, new THREE.LineBasicMaterial({ color: 0x2a2016 })));
+
+  const rig = new THREE.Group();
+  rig.position.set(0, 0, mastZ);
+  rig.rotation.y = 0.2;
+  rig.add(rod(plan.boom[0], plan.boom[1], 0.035, level === 2 ? metal : darkWood));
+  if (plan.yard) rig.add(rod(plan.yard[0], plan.yard[1], 0.03, darkWood));
+  const mS = makeSailMeshData(
+    plan.main.c as [THREE.Vector3, THREE.Vector3, THREE.Vector3, THREE.Vector3],
+    plan.main.k,
+  );
+  rig.add(new THREE.Mesh(mS.geo, sailMat));
+  boat.add(rig);
+
+  const jS = makeSailMeshData(
+    plan.jib.c as [THREE.Vector3, THREE.Vector3, THREE.Vector3, THREE.Vector3],
+    plan.jib.k,
+  );
+  boat.add(new THREE.Mesh(jS.geo, sailMat));
+
+  const hook = new THREE.CatmullRomCurve3([
+    new THREE.Vector3(0, 1.08, -2.58),
+    new THREE.Vector3(0, 1.6, -2.78),
+    new THREE.Vector3(0, 1.9, -3.02),
+    new THREE.Vector3(0, 1.84, -3.22),
+  ]);
+  boat.add(new THREE.Mesh(new THREE.TubeGeometry(hook, 14, 0.028, 6), metal));
+
+  const lanternPivot = new THREE.Group();
+  lanternPivot.position.set(0, 1.84, -3.22);
+  const cap = new THREE.Mesh(new THREE.ConeGeometry(0.13, 0.1, 8), metal);
+  cap.position.y = -0.1;
+  const roof = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.05, 6), metal);
+  roof.position.y = -0.035;
+  const glass = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.088, 0.098, 0.22, 8, 1, true),
+    new THREE.MeshStandardMaterial({
+      color: 0x3a1c08,
+      emissive: new THREE.Color(1.0, 0.56, 0.2),
+      emissiveIntensity: 4.5,
+      roughness: 0.18,
+      transparent: true,
+      opacity: 0.62,
+      side: THREE.DoubleSide,
+    }),
+  );
+  glass.position.y = -0.25;
+  const base = new THREE.Mesh(new THREE.CylinderGeometry(0.115, 0.105, 0.045, 8), metal);
+  base.position.y = -0.37;
+  const flameMesh = new THREE.Mesh(
+    new THREE.ConeGeometry(0.036, 0.14, 7),
+    new THREE.MeshStandardMaterial({
+      color: 0xffd28a,
+      emissive: 0xffb43c,
+      emissiveIntensity: 5.5,
+      roughness: 0.4,
+    }),
+  );
+  flameMesh.position.y = -0.26;
+  const lanternHalo = new THREE.Sprite(
+    new THREE.SpriteMaterial({
+      map: glowTex,
+      color: new THREE.Color(1.0, 0.52, 0.18),
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+      depthTest: false,
+      transparent: true,
+      opacity: 0.88,
+      fog: false,
+    }),
+  );
+  lanternHalo.scale.setScalar(3.4);
+  lanternHalo.position.y = -0.25;
+  const lanternLight = new THREE.PointLight(0xffa456, lanternIntensity, 38, 1.8);
+  lanternLight.position.y = -0.25;
+  lanternPivot.add(cap, roof, glass, base, flameMesh, lanternHalo, lanternLight);
+  boat.add(lanternPivot);
+
+  addBoatDecor(boat, level, skin, { prof, hx, hy, hz });
+
+  return {
+    group: boat,
+    lanternPivot,
+    lanternLight,
+    lanternHalo,
+    flameMesh,
+    lanternWorldPos: new THREE.Vector3(),
+  };
+}
+
+/** 3D Boat Garage turntable showcase for Level 1, 2, or 3 vessels. */
+function buildBoatShowcaseScene(level: BoatLevel, glowTex: THREE.Texture) {
+  const scene = new THREE.Scene();
+  const camera = new THREE.PerspectiveCamera(40, 1.8, 0.2, 700);
+
+  const horizon = level === 3 ? new THREE.Color("#254166") : level === 2 ? new THREE.Color("#1f5a66") : new THREE.Color("#d97e48");
+  const mid = level === 3 ? new THREE.Color("#0e1f3a") : level === 2 ? new THREE.Color("#143949") : new THREE.Color("#56485e");
+  const zenith = new THREE.Color("#071522");
+  const haze = level === 3 ? new THREE.Color("#1b3556") : level === 2 ? new THREE.Color("#1c4a55") : new THREE.Color("#596873");
+  const sunColor = level === 3 ? new THREE.Color("#9bc3ff") : level === 2 ? new THREE.Color("#88ede3") : new THREE.Color("#f6b274");
+  const sunDir = new THREE.Vector3(-0.35, 0.15, -0.92).normalize();
+
+  const { sharedUniforms, glowPos, glowCol } = createSkyAndWater(scene, {
+    mangrove: 0,
+    horizon,
+    mid,
+    zenith,
+    haze,
+    sunColor,
+    sunDir,
+    moonDir: sunDir,
+    sunGlare: level === 1 ? 0.85 : 0.45,
+    deep: level === 3 ? new THREE.Color("#041224") : new THREE.Color("#062933"),
+    scatter: level === 3 ? new THREE.Color("#206a8e") : new THREE.Color("#1ea49c"),
+    fogDensity: 0.0046,
+    amp: 0.14,
+  });
+
+  const hemi = new THREE.HemisphereLight(0x88b4cc, 0x10222a, 1.35);
+  const key = new THREE.DirectionalLight(level === 3 ? 0xc2d8ff : 0xffcf9a, 2.2);
+  key.position.set(5, 8, 6);
+  const rim = new THREE.DirectionalLight(level === 3 ? 0x62c8ff : 0xffb370, 1.2);
+  rim.position.set(-6, 5, -7);
+  scene.add(hemi, key, rim);
+
+  const boat = buildSkinnedPreviewBoat(level, glowTex, 38);
+  boat.group.position.set(0, -0.05, 0);
+  scene.add(boat.group);
+
+  glowCol[0].setRGB(1.0, 0.56, 0.22);
+
+  return {
+    scene,
+    camera,
+    update: (t: number, locked: boolean, yawOffset = 0) => {
+      sharedUniforms.uTime.value = t;
+
+      camera.position.set(0.3, 2.15, 6.4);
+      camera.lookAt(0, 1.15, -0.15);
+
+      const yaw = yawOffset + t * 0.42;
+      boat.group.rotation.y = yaw;
+      boat.group.position.y = Math.sin(t * 1.5) * 0.055 - 0.06;
+      boat.group.rotation.z = Math.sin(t * 1.1) * 0.032;
+      boat.group.rotation.x = Math.cos(t * 0.9) * 0.022;
+
+      const flicker = 1 + 0.08 * Math.sin(t * 11.1) + 0.04 * Math.sin(t * 22.3);
+      const dim = locked ? 0.72 : 1.0;
+      boat.lanternLight.intensity = 38 * flicker * dim;
+      boat.flameMesh.scale.set(1, flicker, 1);
+      boat.lanternHalo.scale.setScalar(3.0 * flicker);
+      boat.lanternPivot.rotation.z = Math.sin(t * 1.8) * 0.05;
+      updateLanternGlowUniform(boat, glowPos[0], 2.0 * flicker * dim);
+    },
+  };
+}
+
 interface PreviewSceneRig {
   scene: THREE.Scene;
   camera: THREE.PerspectiveCamera;
-  update: (t: number, locked: boolean) => void;
+  update: (t: number, locked: boolean, yawOffset?: number) => void;
 }
 
 function createSkyAndWater(
@@ -1286,14 +1563,18 @@ function buildMangrovePreviewScene(
 
 interface TargetEntry {
   canvas: HTMLCanvasElement;
+  kind: "env" | "boat";
   mode: EnvironmentMode;
+  level: BoatLevel;
   locked: boolean;
+  yawOffset: number;
 }
 
 class PreviewManager {
   private renderer: THREE.WebGLRenderer | null = null;
   private seaRig: PreviewSceneRig | null = null;
   private mangroveRig: PreviewSceneRig | null = null;
+  private boatRigs: Partial<Record<BoatLevel, PreviewSceneRig>> = {};
   private targets = new Map<HTMLCanvasElement, TargetEntry>();
   private raf = 0;
   private lastDraw = 0;
@@ -1326,6 +1607,9 @@ class PreviewManager {
 
       this.seaRig = buildSeaPreviewScene(woodTex, deckTex, clothTex, glowTex, foamTex);
       this.mangroveRig = buildMangrovePreviewScene(woodTex, deckTex, clothTex, barkTex, glowTex);
+      this.boatRigs[1] = buildBoatShowcaseScene(1, glowTex);
+      this.boatRigs[2] = buildBoatShowcaseScene(2, glowTex);
+      this.boatRigs[3] = buildBoatShowcaseScene(3, glowTex);
       return true;
     } catch {
       this.failed = true;
@@ -1334,10 +1618,25 @@ class PreviewManager {
   }
 
   register(canvas: HTMLCanvasElement, mode: EnvironmentMode, locked: boolean) {
-    this.targets.set(canvas, { canvas, mode, locked });
+    this.targets.set(canvas, { canvas, kind: "env", mode, level: 1, locked, yawOffset: 0 });
     if (!this.raf && this.ensureInit()) {
       this.lastDraw = 0;
       this.raf = requestAnimationFrame(this.loop);
+    }
+  }
+
+  registerBoat(canvas: HTMLCanvasElement, level: BoatLevel, locked: boolean, yawOffset = 0) {
+    this.targets.set(canvas, { canvas, kind: "boat", mode: "sea", level, locked, yawOffset });
+    if (!this.raf && this.ensureInit()) {
+      this.lastDraw = 0;
+      this.raf = requestAnimationFrame(this.loop);
+    }
+  }
+
+  setBoatYaw(canvas: HTMLCanvasElement, yawOffset: number) {
+    const entry = this.targets.get(canvas);
+    if (entry && entry.kind === "boat") {
+      entry.yawOffset = yawOffset;
     }
   }
 
@@ -1365,7 +1664,7 @@ class PreviewManager {
     const renderer = this.renderer;
 
     for (const entry of this.targets.values()) {
-      const { canvas, mode, locked } = entry;
+      const { canvas, kind, mode, level, locked, yawOffset } = entry;
       const w = canvas.width;
       const h = canvas.height;
       if (w < 4 || h < 4) continue;
@@ -1373,7 +1672,12 @@ class PreviewManager {
       const ctx = canvas.getContext("2d");
       if (!ctx) continue;
 
-      const rig = mode === "sea" ? this.seaRig : this.mangroveRig;
+      const rig =
+        kind === "boat"
+          ? this.boatRigs[level]
+          : mode === "sea"
+          ? this.seaRig
+          : this.mangroveRig;
       if (!rig) continue;
 
       if (renderer.domElement.width !== w || renderer.domElement.height !== h) {
@@ -1385,7 +1689,7 @@ class PreviewManager {
         rig.camera.updateProjectionMatrix();
       }
 
-      rig.update(t, locked);
+      rig.update(t, locked, yawOffset);
       renderer.render(rig.scene, rig.camera);
       ctx.drawImage(renderer.domElement, 0, 0, w, h);
     }

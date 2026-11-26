@@ -1,3 +1,6 @@
+import type { BoatLevel } from "./boatSkins";
+
+export type { BoatLevel };
 export type Difficulty = "calm" | "standard" | "tempest";
 export type QualitySetting = "auto" | "high" | "medium" | "low";
 export type SunGlareSetting = "soft" | "minimal";
@@ -19,6 +22,7 @@ export interface GameSettings {
   haptics: boolean;
   autoFullscreen: boolean;
   environment: EnvironmentMode;
+  boatLevel: BoatLevel;
 }
 
 export interface ScoreEntry {
@@ -36,6 +40,7 @@ const SETTINGS_KEY = "drift.settings.v1";
 const LEGACY_MUTE_KEY = "drift.muted.v1";
 const LIGHTS_KEY = "drift.lights.v1";
 const UNLOCKED_KEY = "drift.unlocked.v1";
+const BOATS_KEY = "drift.boats.v1";
 const MAX_ENTRIES = 8;
 
 export const DEFAULT_SETTINGS: GameSettings = {
@@ -49,6 +54,7 @@ export const DEFAULT_SETTINGS: GameSettings = {
   haptics: true,
   autoFullscreen: true,
   environment: "sea",
+  boatLevel: 1,
 };
 
 export function loadSettings(): GameSettings {
@@ -103,6 +109,11 @@ export function loadSettings(): GameSettings {
         parsed.environment === "mangrove" && loadUnlockedModes().includes("mangrove")
           ? "mangrove"
           : "sea",
+      boatLevel:
+        (parsed.boatLevel === 2 || parsed.boatLevel === 3) &&
+        loadUnlockedBoats().includes(parsed.boatLevel)
+          ? parsed.boatLevel
+          : 1,
     };
   } catch {
     return { ...DEFAULT_SETTINGS };
@@ -178,6 +189,51 @@ export function unlockMangroveWithLights(cost = MANGROVE_UNLOCK_COST): {
   try {
     localStorage.setItem(LIGHTS_KEY, String(nextBalance));
     localStorage.setItem(UNLOCKED_KEY, JSON.stringify(nextUnlocked));
+  } catch {
+    /* ignore */
+  }
+  return { ok: true, balance: nextBalance, unlocked: nextUnlocked };
+}
+
+/** Load unlocked boat levels (Level 1 is always available by default). */
+export function loadUnlockedBoats(): BoatLevel[] {
+  const base: BoatLevel[] = [1];
+  try {
+    const raw = localStorage.getItem(BOATS_KEY);
+    if (!raw) return base;
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return base;
+    const out: BoatLevel[] = [1];
+    if (parsed.includes(2)) out.push(2);
+    if (parsed.includes(3)) out.push(3);
+    return out;
+  } catch {
+    return base;
+  }
+}
+
+/** Spend banked Lights to permanently unlock a Boat tier (Level 2 or 3). */
+export function unlockBoatWithLights(
+  level: BoatLevel,
+  cost: number,
+): {
+  ok: boolean;
+  balance: number;
+  unlocked: BoatLevel[];
+} {
+  const currentUnlocked = loadUnlockedBoats();
+  const currentBalance = loadLights();
+  if (currentUnlocked.includes(level)) {
+    return { ok: true, balance: currentBalance, unlocked: currentUnlocked };
+  }
+  if (currentBalance < cost) {
+    return { ok: false, balance: currentBalance, unlocked: currentUnlocked };
+  }
+  const nextBalance = currentBalance - cost;
+  const nextUnlocked: BoatLevel[] = [...currentUnlocked, level].sort((a, b) => a - b) as BoatLevel[];
+  try {
+    localStorage.setItem(LIGHTS_KEY, String(nextBalance));
+    localStorage.setItem(BOATS_KEY, JSON.stringify(nextUnlocked));
   } catch {
     /* ignore */
   }
