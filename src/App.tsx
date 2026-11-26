@@ -173,12 +173,15 @@ const I = {
 };
 
 const IS_NATIVE = typeof window !== "undefined" && Capacitor.isNativePlatform();
+const IS_ANDROID =
+  IS_NATIVE ||
+  (typeof navigator !== "undefined" && /Android/i.test(navigator.userAgent));
 const APK_DOWNLOAD_URL = "https://github.com/Saif-AlSaad/SeaDrift/releases/latest/download/SeaDrift.apk";
 
 const IS_TOUCH =
   typeof window !== "undefined" &&
   (window.matchMedia?.("(pointer: coarse)").matches || "ontouchstart" in window);
-const CAN_FULLSCREEN = typeof document !== "undefined" && !!document.fullscreenEnabled && !IS_NATIVE;
+const CAN_FULLSCREEN = typeof document !== "undefined" && !!document.fullscreenEnabled && !IS_ANDROID;
 const SAFE_TL = {
   top: "max(1rem, env(safe-area-inset-top))",
   left: "max(1rem, env(safe-area-inset-left))",
@@ -916,13 +919,15 @@ export default function App() {
                 {isFs ? I.shrink("h-5 w-5") : I.expand("h-5 w-5")}
               </button>
             )}
-            <button
-              onClick={toggleMute}
-              aria-label={settings.muted ? "Unmute" : "Mute"}
-              className="icon-btn flex h-11 w-11 items-center justify-center text-foam/85"
-            >
-              {settings.muted ? I.soundOff("h-5 w-5") : I.soundOn("h-5 w-5")}
-            </button>
+            {!IS_ANDROID && (
+              <button
+                onClick={toggleMute}
+                aria-label={settings.muted ? "Unmute" : "Mute"}
+                className="icon-btn flex h-11 w-11 items-center justify-center text-foam/85"
+              >
+                {settings.muted ? I.soundOff("h-5 w-5") : I.soundOn("h-5 w-5")}
+              </button>
+            )}
             <button
               onClick={togglePause}
               aria-label={state === "paused" ? "Resume" : "Pause"}
@@ -1054,7 +1059,7 @@ export default function App() {
             >
               {I.gear("h-5 w-5")}
             </button>
-            {!IS_NATIVE && (
+            {!IS_ANDROID && (
               <button
                 onClick={toggleMute}
                 aria-label={settings.muted ? "Unmute" : "Mute"}
