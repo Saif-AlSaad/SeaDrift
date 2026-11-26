@@ -315,6 +315,7 @@ export default function App() {
   const [unlockedBoats, setUnlockedBoats] = useState<BoatLevel[]>(() => loadUnlockedBoats());
   const [garageBoat, setGarageBoat] = useState<BoatLevel>(() => loadSettings().boatLevel);
   const [confirmBuyBoat, setConfirmBuyBoat] = useState<BoatLevel | null>(null);
+  const [boatLackToast, setBoatLackToast] = useState(0);
   const [earnedLights, setEarnedLights] = useState(0);
   const [final, setFinal] = useState<RunStats | null>(null);
   const [newBest, setNewBest] = useState(false);
@@ -347,6 +348,7 @@ export default function App() {
   const lastCombo = useRef(0);
   const popupId = useRef(0);
   const alertTimer = useRef(0);
+  const boatLackTimer = useRef(0);
   const unlockTimers = useRef<number[]>([]);
 
   const stateRef = useRef<GameState>("menu");
@@ -563,6 +565,7 @@ export default function App() {
       document.removeEventListener("fullscreenchange", onFs);
       window.removeEventListener("popstate", onPop);
       window.clearTimeout(alertTimer.current);
+      window.clearTimeout(boatLackTimer.current);
       for (const tid of unlockTimers.current) window.clearTimeout(tid);
       engine.dispose();
       engineRef.current = null;
@@ -696,6 +699,8 @@ export default function App() {
     audioRef.current?.click();
     setConfirmClear(false);
     setConfirmBuyBoat(null);
+    window.clearTimeout(boatLackTimer.current);
+    setBoatLackToast(0);
     if (m === "unlock") setPreviewMode("mangrove");
     if (m === "garage") setGarageBoat(settings.boatLevel);
     setModal(m);
@@ -707,6 +712,21 @@ export default function App() {
   const selectedBoatEquipped = settings.boatLevel === garageBoat;
   const canAffordSelectedBoat = lights >= selectedBoatSpec.cost;
   const remainingBoatLights = Math.max(0, selectedBoatSpec.cost - lights);
+
+  const triggerNeedMoreLights = () => {
+    audioRef.current?.ensure();
+    audioRef.current?.warn();
+    window.clearTimeout(boatLackTimer.current);
+    setBoatLackToast((n) => n + 1);
+    boatLackTimer.current = window.setTimeout(() => setBoatLackToast(0), 2200);
+  };
+
+  const closeGarage = () => {
+    setModal("none");
+    setConfirmBuyBoat(null);
+    window.clearTimeout(boatLackTimer.current);
+    setBoatLackToast(0);
+  };
 
   const equipBoat = (lvl: BoatLevel) => {
     blurActive();
@@ -1706,16 +1726,28 @@ export default function App() {
       {modal === "garage" && (
         <div
           className="anim-modal-backdrop fixed inset-0 z-30 overflow-y-auto bg-ink/80 px-4 py-6 backdrop-blur-md"
-          onClick={() => {
-            setModal("none");
-            setConfirmBuyBoat(null);
-          }}
+          onClick={closeGarage}
         >
           <div className="flex min-h-full items-center justify-center">
             <div
-              className="glass-modal anim-modal-card w-full max-w-2xl overflow-hidden border-amber/25 bg-[#061820]/95 shadow-[0_28px_90px_rgba(0,0,0,0.86)]"
+              className="glass-modal anim-modal-card relative w-full max-w-2xl overflow-hidden border-amber/25 bg-[#061820]/95 shadow-[0_28px_90px_rgba(0,0,0,0.86)]"
               onClick={(e) => e.stopPropagation()}
             >
+              {boatLackToast > 0 && (
+                <div
+                  key={boatLackToast}
+                  role="alert"
+                  className="anim-popIn pointer-events-none absolute inset-x-0 bottom-20 z-30 flex justify-center px-4"
+                >
+                  <div className="inline-flex items-center gap-2.5 rounded-2xl border border-amber/65 bg-[#0a1d24]/95 px-4 py-2.5 text-xs font-bold tracking-wide text-amber shadow-[0_14px_40px_rgba(0,0,0,0.78)] backdrop-blur-md">
+                    {I.flame("h-4 w-4 text-ember")}
+                    <span>Need more Lights</span>
+                    <span className="text-[11px] font-medium text-foam/70">
+                      ({remainingBoatLights.toLocaleString("en-US")} needed)
+                    </span>
+                  </div>
+                </div>
+              )}
               {/* Full-bleed 3D Interactive Showcase Stage */}
               <div className="relative h-56 w-full bg-[#04141c] sm:h-64">
                 <BoatPreview
@@ -1742,10 +1774,7 @@ export default function App() {
                       <span>{lights.toLocaleString("en-US")}</span>
                     </div>
                     <button
-                      onClick={() => {
-                        setModal("none");
-                        setConfirmBuyBoat(null);
-                      }}
+                      onClick={closeGarage}
                       aria-label="Close"
                       className="flex h-8 w-8 items-center justify-center rounded-full border border-white/15 bg-[#04161e]/85 text-foam/70 backdrop-blur-md transition-colors hover:bg-white/15 hover:text-white"
                     >
@@ -1790,6 +1819,8 @@ export default function App() {
                         onClick={() => {
                           audioRef.current?.click();
                           setConfirmBuyBoat(null);
+                          window.clearTimeout(boatLackTimer.current);
+                          setBoatLackToast(0);
                           setGarageBoat(lvl);
                         }}
                         className={`group relative flex flex-col justify-between rounded-2xl border p-3 text-left transition-all duration-200 sm:p-3.5 ${
@@ -1930,41 +1961,21 @@ export default function App() {
                       </div>
                     </div>
                   ) : (
-                    <div className="space-y-3">
-                      <div className="rounded-2xl border border-foam/10 bg-ink/45 p-3">
-                        <div className="mb-1.5 flex items-center justify-between text-xs">
-                          <span className="text-foam/65">Lights</span>
-                          <span className="font-bold text-foam">
-                            {lights.toLocaleString("en-US")} / {selectedBoatSpec.cost.toLocaleString("en-US")}
-                          </span>
-                        </div>
-                        <div className="h-2 w-full overflow-hidden rounded-full bg-foam/10">
-                          <div
-                            className={`h-full rounded-full transition-all duration-500 ${
-                              canAffordSelectedBoat ? "bg-[#43E6C1]" : "bg-amber"
-                            }`}
-                            style={{
-                              width: `${Math.min(100, (lights / selectedBoatSpec.cost) * 100)}%`,
-                            }}
-                          />
-                        </div>
-                      </div>
-
-                      {canAffordSelectedBoat ? (
-                        <button
-                          type="button"
-                          onClick={() => setConfirmBuyBoat(garageBoat)}
-                          className="flex w-full items-center justify-center gap-2 rounded-xl border border-[#43E6C1]/65 bg-gradient-to-b from-[#43E6C1] to-[#1aa88a] py-3.5 text-xs font-bold uppercase tracking-[0.18em] text-[#031915] shadow-[0_6px_24px_rgba(67,230,193,0.3)] transition-all hover:brightness-105"
-                        >
-                          {I.flame("h-4 w-4")}
-                          Unlock · {selectedBoatSpec.cost.toLocaleString("en-US")} Lights
-                        </button>
-                      ) : (
-                        <div className="rounded-xl border border-foam/15 bg-foam/[0.05] py-3 text-center text-xs font-semibold text-amber/90">
-                          {remainingBoatLights.toLocaleString("en-US")} more Lights needed
-                        </div>
-                      )}
-                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (canAffordSelectedBoat) setConfirmBuyBoat(garageBoat);
+                        else triggerNeedMoreLights();
+                      }}
+                      className={
+                        canAffordSelectedBoat
+                          ? "flex w-full items-center justify-center gap-2 rounded-xl border border-[#43E6C1]/65 bg-gradient-to-b from-[#43E6C1] to-[#1aa88a] py-3.5 text-xs font-bold uppercase tracking-[0.18em] text-[#031915] shadow-[0_6px_24px_rgba(67,230,193,0.3)] transition-all hover:brightness-105"
+                          : "flex w-full items-center justify-center gap-2 rounded-xl border border-amber/35 bg-amber/10 py-3.5 text-xs font-bold uppercase tracking-[0.18em] text-amber transition-all hover:border-amber/60 hover:bg-amber/18"
+                      }
+                    >
+                      {I.flame("h-4 w-4")}
+                      Unlock
+                    </button>
                   )}
                 </div>
               </div>
