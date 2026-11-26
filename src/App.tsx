@@ -1157,28 +1157,27 @@ export default function App() {
                         <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 shadow-[0_0_8px_#34d399]" />
                         Unlocked
                       </div>
-                      <div className="pointer-events-none absolute bottom-5 left-5 right-5 flex items-center justify-between text-[10px] font-semibold uppercase tracking-[0.16em] text-amber/80">
+                      <div className="pointer-events-none absolute bottom-3.5 left-5 right-5 flex items-center justify-between text-[10px] font-semibold uppercase tracking-[0.16em] text-amber/80">
                         <span className="rounded-full border border-amber/20 bg-[#041820]/70 px-2.5 py-0.5 backdrop-blur-xs">
                           Open Ocean
                         </span>
                       </div>
                     </div>
 
-                    <div className="relative z-10 -mt-3 flex flex-1 flex-col justify-between p-6 pt-3">
-                      <div className="flex items-center justify-between">
-                        <h3 className="font-display text-xl font-black tracking-wide text-foam">
+                    <div className="relative z-10 flex flex-1 flex-col justify-center px-6 py-4">
+                      <div className="flex items-center justify-between gap-3">
+                        <h3 className="font-display text-xl font-black leading-none tracking-wide text-foam">
                           Sea Mode
                         </h3>
+                        <button
+                          type="button"
+                          onClick={() => startMode("sea")}
+                          aria-label="Play Sea Mode"
+                          className="btn-primary flex h-11 w-14 shrink-0 items-center justify-center rounded-xl"
+                        >
+                          {I.play("h-5 w-5")}
+                        </button>
                       </div>
-
-                      <button
-                        type="button"
-                        onClick={() => startMode("sea")}
-                        aria-label="Play Sea Mode"
-                        className="btn-primary mt-5 flex w-full items-center justify-center py-3.5"
-                      >
-                        {I.play("h-5 w-5")}
-                      </button>
                     </div>
                   </div>
 
@@ -1230,20 +1229,32 @@ export default function App() {
                           </>
                         )}
                       </div>
-                      <div className="pointer-events-none absolute bottom-5 left-5 right-5 flex items-center justify-between text-[10px] font-semibold uppercase tracking-[0.16em] text-[#43E6C1]/85">
+                      <div className="pointer-events-none absolute bottom-3.5 left-5 right-5 flex items-center justify-between text-[10px] font-semibold uppercase tracking-[0.16em] text-[#43E6C1]/85">
                         <span className="rounded-full border border-[#43E6C1]/25 bg-[#041b19]/75 px-2.5 py-0.5 backdrop-blur-xs">
                           Midnight Canopy
                         </span>
                       </div>
                     </div>
 
-                    <div className="relative z-10 -mt-3 flex flex-1 flex-col justify-between p-6 pt-3">
-                      <div>
-                        <div className="flex items-center justify-between">
-                          <h3 className="font-display text-xl font-black tracking-wide text-foam">
+                    <div className="relative z-10 flex flex-1 flex-col justify-center px-6 py-4">
+                      <div className="w-full">
+                        <div className="flex items-center justify-between gap-3">
+                          <h3 className="font-display text-xl font-black leading-none tracking-wide text-foam">
                             Enchanted Mangrove
                           </h3>
-                          {!mangroveUnlocked && (
+                          {mangroveUnlocked ? (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                startMode("mangrove");
+                              }}
+                              aria-label="Play Enchanted Mangrove"
+                              className="flex h-11 w-14 shrink-0 items-center justify-center rounded-xl border border-[#43E6C1]/60 bg-gradient-to-b from-[#43E6C1] to-[#1aa88a] text-[#031915] shadow-[0_6px_24px_rgba(67,230,193,0.3)] transition-all hover:brightness-105 active:scale-[0.98]"
+                            >
+                              {I.play("h-5 w-5")}
+                            </button>
+                          ) : (
                             <span className="flex items-center gap-1 text-xs font-bold text-amber">
                               {I.flame("h-3.5 w-3.5")}
                               {MANGROVE_UNLOCK_COST.toLocaleString("en-US")}
@@ -1284,19 +1295,7 @@ export default function App() {
                         )}
                       </div>
 
-                      {mangroveUnlocked ? (
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            startMode("mangrove");
-                          }}
-                          aria-label="Play Enchanted Mangrove"
-                          className="mt-5 flex w-full items-center justify-center rounded-xl border border-[#43E6C1]/60 bg-gradient-to-b from-[#43E6C1] to-[#1aa88a] py-3.5 text-[#031915] shadow-[0_6px_24px_rgba(67,230,193,0.3)] transition-all hover:brightness-105 active:scale-[0.98]"
-                        >
-                          {I.play("h-5 w-5")}
-                        </button>
-                      ) : (
+                      {!mangroveUnlocked && (
                         <button
                           type="button"
                           onClick={(e) => {
