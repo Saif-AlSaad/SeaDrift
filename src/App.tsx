@@ -1167,10 +1167,10 @@ export default function App() {
                       <button
                         type="button"
                         onClick={() => startMode("sea")}
-                        className="btn-primary mt-5 flex w-full items-center justify-center gap-2 py-3.5 text-xs font-bold uppercase tracking-[0.2em]"
+                        aria-label="Play Sea Mode"
+                        className="btn-primary mt-5 flex w-full items-center justify-center py-3.5"
                       >
-                        {I.play("h-4 w-4")}
-                        Play Sea Mode
+                        {I.play("h-5 w-5")}
                       </button>
                     </div>
                   </div>
@@ -1284,10 +1284,10 @@ export default function App() {
                             e.stopPropagation();
                             startMode("mangrove");
                           }}
-                          className="mt-5 flex w-full items-center justify-center gap-2 rounded-xl border border-[#43E6C1]/60 bg-gradient-to-b from-[#43E6C1] to-[#1aa88a] py-3.5 text-xs font-bold uppercase tracking-[0.2em] text-[#031915] shadow-[0_6px_24px_rgba(67,230,193,0.3)] transition-all hover:brightness-105 active:scale-[0.98]"
+                          aria-label="Play Enchanted Mangrove"
+                          className="mt-5 flex w-full items-center justify-center rounded-xl border border-[#43E6C1]/60 bg-gradient-to-b from-[#43E6C1] to-[#1aa88a] py-3.5 text-[#031915] shadow-[0_6px_24px_rgba(67,230,193,0.3)] transition-all hover:brightness-105 active:scale-[0.98]"
                         >
-                          {I.play("h-4 w-4")}
-                          Play Mangrove
+                          {I.play("h-5 w-5")}
                         </button>
                       ) : (
                         <button
