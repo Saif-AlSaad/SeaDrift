@@ -1749,7 +1749,7 @@ export default function App() {
                 </div>
               )}
               {/* Full-bleed 3D Interactive Showcase Stage */}
-              <div className="relative h-56 w-full bg-[#04141c] sm:h-64">
+              <div className="relative h-72 w-full bg-[#04141c] sm:h-80">
                 <BoatPreview
                   level={garageBoat}
                   locked={!selectedBoatUnlocked}
@@ -1783,7 +1783,7 @@ export default function App() {
                   </div>
                 </div>
 
-                {/* Stage Title + 360° Hint */}
+                {/* Stage Title */}
                 <div className="pointer-events-none absolute inset-x-4 bottom-4 flex items-end justify-between sm:inset-x-6">
                   <div>
                     <div className="flex items-center gap-2">
@@ -1798,9 +1798,6 @@ export default function App() {
                       )}
                     </div>
                   </div>
-                  <span className="rounded-full border border-white/12 bg-black/45 px-2.5 py-1 text-[10px] font-medium tracking-wide text-foam/70 backdrop-blur-xs">
-                    Drag to rotate 360°
-                  </span>
                 </div>
               </div>
 

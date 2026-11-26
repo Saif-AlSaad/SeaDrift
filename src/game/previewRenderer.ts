@@ -776,8 +776,8 @@ function buildBoatShowcaseScene(level: BoatLevel, glowTex: THREE.Texture) {
     update: (t: number, locked: boolean, yawOffset = 0) => {
       sharedUniforms.uTime.value = t;
 
-      camera.position.set(0.3, 2.15, 6.4);
-      camera.lookAt(0, 1.15, -0.15);
+      camera.position.set(0.3, 2.35, 7.3);
+      camera.lookAt(0, 1.35, -0.15);
 
       const yaw = yawOffset + t * 0.42;
       boat.group.rotation.y = yaw;
