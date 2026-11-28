@@ -43,6 +43,12 @@ jobs:
       - name: Grant execute permission for gradlew
         run: chmod +x android/gradlew
 
+      - name: Cache Android debug keystore for upgrade compatibility
+        uses: actions/cache@v4
+        with:
+          path: ~/.android/debug.keystore
+          key: seadrift-android-debug-keystore-v1
+
       - name: Build Debug APK
         run: |
           cd android

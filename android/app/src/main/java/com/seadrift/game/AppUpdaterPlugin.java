@@ -202,8 +202,8 @@ public class AppUpdaterPlugin extends Plugin {
                 ret.put("version", rawVersion);
                 ret.put("path", activePath);
 
-                bridge.setServerBasePath(activePath);
                 call.resolve(ret);
+                bridge.setServerBasePath(activePath);
             } catch (Exception e) {
                 deleteRecursive(stagingDir);
                 call.reject("Update failed: " + e.getMessage(), e);
