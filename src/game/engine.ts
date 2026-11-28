@@ -44,6 +44,24 @@ import {
   type RiverGatorRig,
   type SpiritHavenRig,
 } from "./mangrove";
+import {
+  CANAL_BLOCK_LENGTH,
+  CANAL_QUAY_X,
+  getCanalDistrictIndex,
+  makeCanalBargeRig,
+  makeCanalBuoyBodyGeometry,
+  makeCanalCargoRaftGeometry,
+  makeCanalDistrictBlocks,
+  makeCanalJettyGroup,
+  makeCanalLanternFloatRig,
+  makeCanalMaterials,
+  makeCanalPilingGeometry,
+  type CanalBargeRig,
+  type CanalBlock,
+  type CanalJettyRig,
+  type CanalLanternFloatRig,
+  type CanalMaterials,
+} from "./canal";
 
 export type GameState = "menu" | "playing" | "paused" | "gameover";
 
@@ -177,6 +195,7 @@ uniform float uSunGlare;
 uniform float uStorm;
 uniform float uFlash;
 uniform float uMangrove;
+uniform float uCanal;
 vec3 skyColor(vec3 d) {
   float y = max(d.y, 0.0);
   float s = max(dot(d, uSunDir), 0.0);
@@ -303,6 +322,7 @@ interface Rock {
   group: THREE.Group;
   body: THREE.Mesh;
   snagBody: THREE.Mesh;
+  pilingBody: THREE.Mesh;
   foam: THREE.Mesh;
   x: number;
   z: number;
@@ -316,6 +336,7 @@ interface Mine {
   body: THREE.Group;
   shellBody: THREE.Group;
   tangleBody: THREE.Group;
+  canalBuoyBody: THREE.Mesh;
   beacon: THREE.MeshStandardMaterial;
   halo: THREE.Sprite;
   x: number;
@@ -342,6 +363,8 @@ interface RogueWave {
 interface Log {
   group: THREE.Group;
   roll: THREE.Group;
+  driftBody: THREE.Group;
+  cargoBody: THREE.Mesh;
   x: number;
   z: number;
   vx: number;
@@ -352,6 +375,38 @@ interface Log {
   sink: number;
   minD: number;
   passed: boolean;
+}
+
+interface CanalJetty {
+  rig: CanalJettyRig;
+  side: -1 | 1;
+  xMin: number;
+  xMax: number;
+  tipX: number;
+  z: number;
+  active: boolean;
+  hit: boolean;
+  passed: boolean;
+}
+
+interface CanalBarge {
+  rig: CanalBargeRig;
+  x: number;
+  z: number;
+  vz: number;
+  vx: number;
+  phase: number;
+  active: boolean;
+  hit: boolean;
+  passed: boolean;
+}
+
+interface CanalFloat {
+  rig: CanalLanternFloatRig;
+  x: number;
+  z: number;
+  phase: number;
+  active: boolean;
 }
 
 interface Jelly {
@@ -589,6 +644,73 @@ const MANGROVE_AREAS: Record<"entrance" | "passage" | "grove" | "ancient", Atmos
   },
 };
 
+const CANAL_AREAS: Record<"golden" | "merchant" | "warehouse" | "oldtown", AtmosphereConfig> = {
+  golden: {
+    name: "Golden Quay",
+    horizon: new THREE.Color("#ffc48a"),
+    mid: new THREE.Color("#7d86ab"),
+    zenith: new THREE.Color("#3b6cb0"),
+    haze: new THREE.Color("#e6b68c"),
+    sunColor: new THREE.Color("#ffd2a0"),
+    sunGlare: 0.72,
+    starBoost: 0.35,
+    deep: new THREE.Color("#0f3a43"),
+    scatter: new THREE.Color("#28747c"),
+    fogDensity: 0.0068,
+    fogColor: new THREE.Color("#c99c7c"),
+    hemiInt: 0.92,
+    sunInt: 1.85,
+  },
+  merchant: {
+    name: "Merchant Row",
+    horizon: new THREE.Color("#b9828d"),
+    mid: new THREE.Color("#4d598f"),
+    zenith: new THREE.Color("#192b5e"),
+    haze: new THREE.Color("#7f738f"),
+    sunColor: new THREE.Color("#f2b48c"),
+    sunGlare: 0.42,
+    starBoost: 0.65,
+    deep: new THREE.Color("#0b2d38"),
+    scatter: new THREE.Color("#1e606b"),
+    fogDensity: 0.0076,
+    fogColor: new THREE.Color("#5e6185"),
+    hemiInt: 0.72,
+    sunInt: 1.15,
+  },
+  warehouse: {
+    name: "Warehouse Row",
+    horizon: new THREE.Color("#6a73ab"),
+    mid: new THREE.Color("#28366d"),
+    zenith: new THREE.Color("#0b1a42"),
+    haze: new THREE.Color("#3b4676"),
+    sunColor: new THREE.Color("#9aaeff"),
+    sunGlare: 0.18,
+    starBoost: 0.95,
+    deep: new THREE.Color("#08212e"),
+    scatter: new THREE.Color("#17525f"),
+    fogDensity: 0.0086,
+    fogColor: new THREE.Color("#3b4676"),
+    hemiInt: 0.58,
+    sunInt: 0.68,
+  },
+  oldtown: {
+    name: "Midnight Old Town",
+    horizon: new THREE.Color("#141c3c"),
+    mid: new THREE.Color("#0a1228"),
+    zenith: new THREE.Color("#02040d"),
+    haze: new THREE.Color("#0b1226"),
+    sunColor: new THREE.Color("#7d96e8"),
+    sunGlare: 0.12,
+    starBoost: 1.1,
+    deep: new THREE.Color("#05111e"),
+    scatter: new THREE.Color("#144354"),
+    fogDensity: 0.0098,
+    fogColor: new THREE.Color("#0b1226"),
+    hemiInt: 0.42,
+    sunInt: 0.36,
+  },
+};
+
 function resolveAreaKey(env: EnvironmentMode, distMeters: number): { key: string; cfg: AtmosphereConfig } {
   if (env === "mangrove") {
     const key =
@@ -600,6 +722,12 @@ function resolveAreaKey(env: EnvironmentMode, distMeters: number): { key: string
             ? "passage"
             : "entrance";
     return { key, cfg: MANGROVE_AREAS[key] };
+  }
+  if (env === "canal") {
+    const idx = getCanalDistrictIndex(distMeters);
+    const keys = ["golden", "merchant", "warehouse", "oldtown"] as const;
+    const key = keys[idx] ?? "golden";
+    return { key, cfg: CANAL_AREAS[key] };
   }
   const key = distMeters >= 700 ? "graveyard" : distMeters >= 400 ? "abyss" : "dusk";
   return { key, cfg: BIOMES[key] };
@@ -692,6 +820,7 @@ export class GameEngine {
     uSunGlare: { value: 1.0 },
     uStarBoost: { value: 1.0 },
     uMangrove: { value: 0.0 },
+    uCanal: { value: 0.0 },
     uSunDir: { value: sunDir() },
     uMoonDir: { value: moonDir() },
     uSunColor: { value: new THREE.Color("#f4ad6c") },
@@ -760,6 +889,26 @@ export class GameEngine {
   private forkIslets: ForkIslet[] = [];
   private spiritHaven!: SpiritHavenRig;
   private lastSpiritHavenTriggered = 0;
+
+  // Historic Canal corridor (merged multi-material block slots)
+  private canalGroup = new THREE.Group();
+  private canalMaterials?: CanalMaterials;
+  private canalDistrictBlocks: CanalBlock[][] = [];
+  private canalGlowGeos: THREE.BufferGeometry[][] = [];
+  private canalGlowMat?: THREE.ShaderMaterial;
+  private canalSlots: Array<{
+    group: THREE.Group;
+    meshes: THREE.Mesh[];
+    glow: THREE.Points;
+    z: number;
+    di: number;
+    gi: number;
+  }> = [];
+  private canalBankScrapeCd = 0;
+  private lastCanalHavenTriggered = 0;
+  private canalJetties: CanalJetty[] = [];
+  private canalBarges: CanalBarge[] = [];
+  private canalFloats: CanalFloat[] = [];
 
   // boat
   private boat!: THREE.Group;
@@ -892,10 +1041,13 @@ export class GameEngine {
   private mGatorTimer = 15;
   private mLilyMatTimer = 6;
   private mForkTimer = 24;
+  private canalJettyTimer = 9;
+  private canalBargeTimer = 12;
   private waveAlertShown = false;
   private mineAlertShown = false;
   private gatorAlertShown = false;
   private forkAlertShown = false;
+  private canalBargeAlertShown = false;
   private sprayTimer = 0;
   private overTimer = 0;
 
@@ -1004,6 +1156,7 @@ export class GameEngine {
     this.buildWeather();
     this.buildBiomes();
     this.buildMangroveForest();
+    this.buildCanalCorridor();
     this.buildComposer(w, h);
     this.applySettings(initialSettings);
 
@@ -1049,27 +1202,49 @@ export class GameEngine {
 
   /** Snap or sync sky, lighting, islands, and zone state for the active environment mode. */
   private syncEnvironmentVisuals(snapAtmosphere: boolean) {
+    const isSea = this.environment === "sea";
     const isMangrove = this.environment === "mangrove";
+    const isCanal = this.environment === "canal";
     this.audio.setEnvironment(this.environment);
     for (const isle of this.islands) {
-      isle.visible = !isMangrove;
+      isle.visible = isSea;
     }
     this.mangroveGroup.visible = isMangrove;
     if (isMangrove && this.mTrees.length) {
       this.resetMangroveCorridor(this.boat?.position.z ?? 0);
+    }
+    this.canalGroup.visible = isCanal;
+    if (isCanal && this.canalSlots.length) {
+      this.resetCanalCorridor(this.boat?.position.z ?? 0);
+    }
+    if (!isSea) {
+      this.stormOn = false;
+      this.storm = 0;
+      this.U.uStorm.value = 0;
+      this.audio.setRain(0);
+      if (this.lighthouse) this.lighthouse.visible = false;
+    }
+    if (!isMangrove && this.spiritHaven) {
+      this.spiritHaven.group.visible = false;
     }
     if (isMangrove) {
       this.sun.position.copy(moonDir()).multiplyScalar(200);
       this.sun.color.set("#a8c9d2");
       this.hemi.color.set("#5c8f99");
       this.hemi.groundColor.set("#051a19");
-      if (this.lighthouse) this.lighthouse.visible = false;
-      if (this.spiritHaven) this.spiritHaven.group.visible = false;
+    } else if (isCanal) {
+      this.sun.position.set(60, 38, -30);
+      this.sun.color.set("#ffd2a0");
+      this.hemi.color.set("#9db6e6");
+      this.hemi.groundColor.set("#6a5a4a");
     } else {
       this.sun.position.copy(sunDir()).multiplyScalar(200);
       this.sun.color.set("#f6aa68");
       this.hemi.color.set("#8fa9bd");
       this.hemi.groundColor.set("#1a2a30");
+    }
+    if (this.boat && this.waterMesh) {
+      this.boatY = this.surf(this.boat.position.x, this.boat.position.z);
     }
 
     const startArea = resolveAreaKey(this.environment, 0);
@@ -1081,6 +1256,10 @@ export class GameEngine {
       const cfg = startArea.cfg;
       const U = this.U;
       U.uMangrove.value = isMangrove ? 1.0 : 0.0;
+      U.uCanal.value = isCanal ? 1.0 : 0.0;
+      if (this.canalGlowMat) {
+        this.canalGlowMat.uniforms.uK.value = isCanal ? 0.42 : 0.0;
+      }
       U.uHorizon.value.copy(cfg.horizon);
       U.uMid.value.copy(cfg.mid);
       U.uZenith.value.copy(cfg.zenith);
@@ -1164,21 +1343,26 @@ export class GameEngine {
     this.mGatorTimer = 16 / mult;
     this.mLilyMatTimer = 6.5 / mult;
     this.mForkTimer = 25 / mult;
+    this.canalJettyTimer = 8.5 / mult;
+    this.canalBargeTimer = 11.5 / mult;
     this.mLilyDrag = 0;
     this.mLilyRustleCd = 0;
     this.waveAlertShown = false;
     this.mineAlertShown = false;
     this.gatorAlertShown = false;
     this.forkAlertShown = false;
+    this.canalBargeAlertShown = false;
     this.stormOn = false;
     this.stormTimer = BASE_TUNING.stormStart;
     this.pushVx = 0;
     this.coreAmt = 0;
     this.mBankScrapeCd = 0;
+    this.canalBankScrapeCd = 0;
     this.mSwarmBoostT = 0;
     this.mSwarmChain = 0;
     this.lastLighthouseTriggered = 0;
     this.lastSpiritHavenTriggered = 0;
+    this.lastCanalHavenTriggered = 0;
     this.shipwreckTimer = 14;
     this.buoyTimer = 18;
     if (this.lighthouse) this.lighthouse.visible = false;
@@ -1202,6 +1386,8 @@ export class GameEngine {
     this.boat.position.set(0, this.boat.position.y, 0);
     if (this.environment === "mangrove" && this.mTrees.length) {
       this.resetMangroveCorridor(0);
+    } else if (this.environment === "canal" && this.canalSlots.length) {
+      this.resetCanalCorridor(0);
     }
     this.boatY = this.surf(0, 0);
     this.boatVy = 0;
@@ -1253,6 +1439,34 @@ export class GameEngine {
     this.audio.setRumble(0);
     this.audio.setRain(0);
     this.composer?.dispose();
+    for (const distBlocks of this.canalDistrictBlocks) {
+      for (const b of distBlocks) {
+        b.brick.dispose();
+        b.stone.dispose();
+        b.paint.dispose();
+        b.roof.dispose();
+        b.glass.dispose();
+      }
+    }
+    for (const geos of this.canalGlowGeos) {
+      for (const g of geos) g.dispose();
+    }
+    this.canalGlowMat?.dispose();
+    if (this.canalMaterials) {
+      const mList = [
+        this.canalMaterials.brick,
+        this.canalMaterials.stone,
+        this.canalMaterials.paint,
+        this.canalMaterials.roof,
+        this.canalMaterials.glass,
+      ];
+      for (const m of mList) {
+        const std = m as THREE.MeshStandardMaterial;
+        std.map?.dispose();
+        std.roughnessMap?.dispose();
+        m.dispose();
+      }
+    }
     this.renderer.dispose();
     this.scene.traverse((o) => {
       const m = o as THREE.Mesh;
@@ -1731,6 +1945,13 @@ export class GameEngine {
             refl *= mix(1.0, 0.48 + 0.52 * channelMask, uMangrove);
           }
 
+          // --- sheltered canal quay wall darkening along outer channel ---
+          if (uCanal > 0.001) {
+            float canalMask = smoothstep(20.0, 9.5, abs(p.x));
+            body = mix(body, body * (0.68 + 0.34 * canalMask), uCanal);
+            refl *= mix(1.0, 0.62 + 0.38 * canalMask, uCanal);
+          }
+
           body *= 1.0 - uStorm * 0.5;
           vec3 col = mix(body, refl, F);
 
@@ -1750,7 +1971,7 @@ export class GameEngine {
             if (inten > 0.001 && d2 < 3600.0) {
               vec3 L = Lv * inversesqrt(d2);
               float nh = max(dot(N, normalize(L + V)), 0.0);
-              float boost = (i == 0) ? (1.0 + uMangrove * 0.35) : 1.0;
+              float boost = (i == 0) ? (1.0 + uMangrove * 0.35 + uCanal * 0.25) : 1.0;
               glowDiff += uGlowCol[i] * (inten * boost / (1.0 + d2 * 0.07)) * max(dot(N, L), 0.0);
               col += uGlowCol[i] * inten * boost * (pow(nh, 160.0) * 3.0 + pow(nh, 22.0) * 0.22) / (1.0 + d2 * 0.012);
             }
@@ -2331,6 +2552,12 @@ export class GameEngine {
       roughness: 0.72,
       metalness: 0.06,
     });
+    const pilingGeos = [makeCanalPilingGeometry(11.7), makeCanalPilingGeometry(29.3)];
+    const canalObstacleMat = new THREE.MeshStandardMaterial({
+      vertexColors: true,
+      roughness: 0.72,
+      metalness: 0.06,
+    });
     const foamTex = makeFoamRingTexture();
     const foamGeo = new THREE.PlaneGeometry(1, 1);
     foamGeo.rotateX(-Math.PI / 2);
@@ -2339,6 +2566,8 @@ export class GameEngine {
       const body = new THREE.Mesh(this.rockGeos[i % this.rockGeos.length], rockMat);
       const snagBody = new THREE.Mesh(snagGeos[i % snagGeos.length], snagMat);
       snagBody.visible = false;
+      const pilingBody = new THREE.Mesh(pilingGeos[i % pilingGeos.length], canalObstacleMat);
+      pilingBody.visible = false;
       const foam = new THREE.Mesh(
         foamGeo,
         new THREE.MeshBasicMaterial({
@@ -2349,13 +2578,24 @@ export class GameEngine {
           depthWrite: false,
         }),
       );
-      g.add(body, snagBody, foam);
+      g.add(body, snagBody, pilingBody, foam);
       g.visible = false;
       this.scene.add(g);
-      this.rocks.push({ group: g, body, snagBody, foam, x: 0, z: 0, s: 1.6, active: false, passed: false });
+      this.rocks.push({
+        group: g,
+        body,
+        snagBody,
+        pilingBody,
+        foam,
+        x: 0,
+        z: 0,
+        s: 1.6,
+        active: false,
+        passed: false,
+      });
     }
 
-    // --- tethered sea mines (and mangrove tangled floating root clusters) ---
+    // --- tethered sea mines (and mangrove tangled root clusters / canal hazard buoys) ---
     const ironMat = new THREE.MeshStandardMaterial({
       color: 0x36393e,
       roughness: 0.42,
@@ -2372,6 +2612,7 @@ export class GameEngine {
       roughness: 0.82,
       metalness: 0.05,
     });
+    const canalBuoyGeo = makeCanalBuoyBodyGeometry();
     const sphereGeo = new THREE.IcosahedronGeometry(0.68, 2);
     const hornGeo = new THREE.ConeGeometry(0.11, 0.34, 6);
     const chainGeo = new THREE.CylinderGeometry(0.045, 0.045, 1.3, 6);
@@ -2407,6 +2648,9 @@ export class GameEngine {
       tangleBody.add(new THREE.Mesh(tangleGeo, tangleMat));
       tangleBody.visible = false;
 
+      const canalBuoyBody = new THREE.Mesh(canalBuoyGeo, canalObstacleMat);
+      canalBuoyBody.visible = false;
+
       const beaconMat = new THREE.MeshStandardMaterial({
         color: 0xff1a10,
         emissive: new THREE.Color(1.0, 0.15, 0.08),
@@ -2429,7 +2673,7 @@ export class GameEngine {
       );
       halo.scale.setScalar(2.4);
       halo.position.y = 0.96;
-      body.add(mineShell, tangleBody, beacon, halo);
+      body.add(mineShell, tangleBody, canalBuoyBody, beacon, halo);
 
       g.add(body);
       g.visible = false;
@@ -2439,6 +2683,7 @@ export class GameEngine {
         body,
         shellBody: mineShell,
         tangleBody,
+        canalBuoyBody,
         beacon: beaconMat,
         halo,
         x: 0,
@@ -2491,7 +2736,7 @@ export class GameEngine {
       });
     }
 
-    // --- driftwood logs ---
+    // --- driftwood logs (and canal timber cargo rafts) ---
     const bark = makeBarkTexture();
     const logMat = new THREE.MeshStandardMaterial({
       map: bark,
@@ -2502,23 +2747,30 @@ export class GameEngine {
     });
     const logGeo = makeLogGeometry(6.6);
     const stubGeo = new THREE.CylinderGeometry(0.09, 0.14, 0.8, 6);
+    const cargoRaftGeos = [makeCanalCargoRaftGeometry(5.1), makeCanalCargoRaftGeometry(17.9)];
     for (let i = 0; i < 6; i++) {
       const g = new THREE.Group();
       const roll = new THREE.Group();
-      roll.add(new THREE.Mesh(logGeo, logMat));
+      const driftBody = new THREE.Group();
+      driftBody.add(new THREE.Mesh(logGeo, logMat));
       for (let k = 0; k < 2; k++) {
         const stub = new THREE.Mesh(stubGeo, logMat);
         stub.position.set(-1.6 + k * 2.6 + Math.random(), 0.5, 0);
         stub.rotation.set(Math.random() * 6, 0, 0.5 - Math.random());
         stub.position.applyAxisAngle(new THREE.Vector3(1, 0, 0), stub.rotation.x);
-        roll.add(stub);
+        driftBody.add(stub);
       }
-      g.add(roll);
+      const cargoBody = new THREE.Mesh(cargoRaftGeos[i % cargoRaftGeos.length], canalObstacleMat);
+      cargoBody.visible = false;
+      roll.add(driftBody);
+      g.add(roll, cargoBody);
       g.visible = false;
       this.scene.add(g);
       this.logs.push({
         group: g,
         roll,
+        driftBody,
+        cargoBody,
         x: 0,
         z: 0,
         vx: 0,
@@ -3525,6 +3777,192 @@ export class GameEngine {
     if (fDirty) this.fireflies.geometry.getAttribute("position").needsUpdate = true;
   }
 
+  private buildCanalCorridor() {
+    const q = this.isMobile ? "low" : "high";
+    this.canalMaterials = makeCanalMaterials();
+    this.canalGlowMat = new THREE.ShaderMaterial({
+      transparent: true,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+      fog: false,
+      uniforms: {
+        uK: { value: 0.42 },
+        uScale: { value: this.viewH * 0.85 },
+      },
+      vertexShader: /* glsl */ `
+        uniform float uScale;
+        varying float vA;
+        void main() {
+          vec4 mv = modelViewMatrix * vec4(position, 1.0);
+          float dist = max(-mv.z, 1.0);
+          gl_PointSize = clamp(uScale * 5.2 / dist, 2.0, 110.0);
+          vA = smoothstep(260.0, 20.0, dist);
+          gl_Position = projectionMatrix * mv;
+        }
+      `,
+      fragmentShader: /* glsl */ `
+        uniform float uK;
+        varying float vA;
+        void main() {
+          float r = length(gl_PointCoord - 0.5) * 2.0;
+          if (r > 1.0) discard;
+          float g = exp(-r * r * 4.0);
+          gl_FragColor = vec4(vec3(1.0, 0.72, 0.36) * g, g * vA * uK);
+        }
+      `,
+    });
+
+    for (let di = 0; di < 4; di++) {
+      const blocks = makeCanalDistrictBlocks(di, q);
+      this.canalDistrictBlocks.push(blocks);
+      const geos: THREE.BufferGeometry[] = blocks.map((b) => {
+        const g = new THREE.BufferGeometry();
+        const a = new Float32Array(Math.max(1, b.lamps.length) * 3);
+        b.lamps.forEach((p, idx) => a.set(p, idx * 3));
+        g.setAttribute("position", new THREE.BufferAttribute(a, 3));
+        return g;
+      });
+      this.canalGlowGeos.push(geos);
+    }
+
+    const mats = [
+      this.canalMaterials.brick,
+      this.canalMaterials.stone,
+      this.canalMaterials.paint,
+      this.canalMaterials.roof,
+      this.canalMaterials.glass,
+    ];
+    const slotCount = 6;
+    for (let i = 0; i < slotCount; i++) {
+      const group = new THREE.Group();
+      const meshes = mats.map((mt) => {
+        const mesh = new THREE.Mesh(new THREE.BufferGeometry(), mt);
+        mesh.frustumCulled = false;
+        return mesh;
+      });
+      const glow = new THREE.Points(new THREE.BufferGeometry(), this.canalGlowMat);
+      glow.frustumCulled = false;
+      for (const x of meshes) group.add(x);
+      group.add(glow);
+      this.canalGroup.add(group);
+      this.canalSlots.push({
+        group,
+        meshes,
+        glow,
+        z: CANAL_BLOCK_LENGTH - i * CANAL_BLOCK_LENGTH,
+        di: 0,
+        gi: i % 3,
+      });
+    }
+    this.resetCanalCorridor(0);
+    if (this.glowTex) {
+      for (let i = 0; i < 4; i++) {
+        const rig = makeCanalJettyGroup(this.glowTex, this.canalMaterials.paint, 8.4);
+        rig.group.visible = false;
+        this.canalGroup.add(rig.group);
+        this.canalJetties.push({
+          rig,
+          side: -1,
+          xMin: 0,
+          xMax: 0,
+          tipX: 0,
+          z: 0,
+          active: false,
+          hit: false,
+          passed: false,
+        });
+      }
+      for (let i = 0; i < 4; i++) {
+        const rig = makeCanalBargeRig(19.3 + i * 17.7, this.glowTex, this.canalMaterials.paint);
+        rig.group.visible = false;
+        this.canalGroup.add(rig.group);
+        this.canalBarges.push({
+          rig,
+          x: 0,
+          z: 0,
+          vz: 0,
+          vx: 0,
+          phase: Math.random() * Math.PI * 2,
+          active: false,
+          hit: false,
+          passed: false,
+        });
+      }
+      for (let i = 0; i < 2; i++) {
+        const rig = makeCanalLanternFloatRig(this.glowTex, this.canalMaterials.paint);
+        rig.group.visible = false;
+        this.canalGroup.add(rig.group);
+        this.canalFloats.push({
+          rig,
+          x: 0,
+          z: 0,
+          phase: Math.random() * 8,
+          active: false,
+        });
+      }
+    }
+    this.canalGroup.visible = this.environment === "canal";
+    this.scene.add(this.canalGroup);
+  }
+
+  private assignCanalSlot(
+    slot: {
+      group: THREE.Group;
+      meshes: THREE.Mesh[];
+      glow: THREE.Points;
+      z: number;
+      di: number;
+      gi: number;
+    },
+    di: number,
+    gi: number,
+  ) {
+    const blocks = this.canalDistrictBlocks[di];
+    const geos = this.canalGlowGeos[di];
+    if (!blocks || !geos) return;
+    const b = blocks[gi % blocks.length];
+    slot.di = di;
+    slot.gi = gi % blocks.length;
+    slot.meshes[0].geometry = b.brick;
+    slot.meshes[1].geometry = b.stone;
+    slot.meshes[2].geometry = b.paint;
+    slot.meshes[3].geometry = b.roof;
+    slot.meshes[4].geometry = b.glass;
+    slot.glow.geometry = geos[slot.gi];
+  }
+
+  private resetCanalCorridor(baseZ: number) {
+    for (let i = 0; i < this.canalSlots.length; i++) {
+      const slot = this.canalSlots[i];
+      slot.z = baseZ + CANAL_BLOCK_LENGTH - i * CANAL_BLOCK_LENGTH;
+      const distMeters = Math.max(0, Math.floor(-slot.z / 10));
+      const di = getCanalDistrictIndex(distMeters);
+      this.assignCanalSlot(slot, di, i % 3);
+      slot.group.position.z = slot.z;
+    }
+  }
+
+  private updateCanalCorridor(bz: number) {
+    const behind = bz + 40;
+    for (const s of this.canalSlots) {
+      if (s.z - CANAL_BLOCK_LENGTH / 2 > behind) {
+        let minZ = Infinity;
+        let prev = this.canalSlots[0];
+        for (const o of this.canalSlots) {
+          if (o.z < minZ) {
+            minZ = o.z;
+            prev = o;
+          }
+        }
+        s.z = minZ - CANAL_BLOCK_LENGTH;
+        const distMeters = Math.max(0, Math.floor(-s.z / 10));
+        const di = getCanalDistrictIndex(distMeters);
+        this.assignCanalSlot(s, di, (prev.gi + 1) % 3);
+      }
+      s.group.position.z = s.z;
+    }
+  }
+
   private spawnShipwreck() {
     const s = this.shipwrecks.find((q) => !q.active);
     if (!s) return;
@@ -3649,6 +4087,7 @@ export class GameEngine {
     const r = this.rocks.find((q) => !q.active);
     if (!r) return;
     const isMangrove = this.environment === "mangrove";
+    const isCanal = this.environment === "canal";
     r.active = true;
     r.passed = false;
     r.x = x;
@@ -3657,36 +4096,43 @@ export class GameEngine {
     r.group.visible = true;
     r.group.position.set(x, 0, z);
     const yaw = Math.random() * Math.PI * 2;
-    r.body.visible = !isMangrove;
+    r.body.visible = !isMangrove && !isCanal;
     r.snagBody.visible = isMangrove;
+    r.pilingBody.visible = isCanal;
     r.body.rotation.y = yaw;
     r.body.scale.set(s, s * (1.5 + Math.random() * 0.7), s);
     r.body.position.y = -0.25 * s;
     r.snagBody.rotation.y = yaw;
     r.snagBody.scale.set(s * 0.95, s * (0.95 + Math.random() * 0.35), s * 0.95);
     r.snagBody.position.y = -0.15 * s;
+    r.pilingBody.rotation.y = yaw;
+    r.pilingBody.scale.set(s * 0.92, s * (0.9 + Math.random() * 0.25), s * 0.92);
+    r.pilingBody.position.y = -0.05;
     (r.foam.material as THREE.MeshBasicMaterial).color.setRGB(
-      isMangrove ? 0.45 : 0.85,
-      isMangrove ? 0.75 : 0.94,
-      isMangrove ? 0.70 : 0.96,
+      isMangrove ? 0.45 : isCanal ? 0.72 : 0.85,
+      isMangrove ? 0.75 : isCanal ? 0.84 : 0.94,
+      isMangrove ? 0.70 : isCanal ? 0.88 : 0.96,
     );
     r.foam.scale.setScalar(s * 3.5);
     r.foam.rotation.y = Math.random() * 6;
   }
 
   private spawnRocks(d: number, dist?: number) {
+    const isCanal = this.environment === "canal";
+    const laneLimit = isCanal ? STEER_RANGE - 2.2 : STEER_RANGE;
     const bz = this.boat.position.z;
     const z = bz - (dist ?? 102 + Math.random() * 32);
     const hasBlocker =
       this.fallenTrunks.some((ft) => ft.active && Math.abs(ft.z - z) < 18) ||
+      this.canalJetties.some((cj) => cj.active && Math.abs(cj.z - z) < 18) ||
       this.forkIslets.some((fk) => fk.active && Math.abs(fk.z - z) < 22);
     if (!hasBlocker && d > 0.16 && Math.random() < 0.22 + d * 0.42) {
       // reef wall with one narrow gap and a teal reward inside
-      const gap = (Math.random() * 2 - 1) * (STEER_RANGE - 5);
-      for (let x = -STEER_RANGE - 1; x <= STEER_RANGE + 1; x += 4.8 + Math.random() * 1.2) {
+      const gap = (Math.random() * 2 - 1) * (laneLimit - 4.5);
+      for (let x = -laneLimit; x <= laneLimit; x += 4.8 + Math.random() * 1.2) {
         if (Math.abs(x - gap) < 4.9) continue;
         this.spawnRockAt(
-          x + (Math.random() - 0.5),
+          clamp(x + (Math.random() - 0.5), -laneLimit, laneLimit),
           z + (Math.random() - 0.5) * 5,
           1.35 + Math.random() * 0.7,
         );
@@ -3694,19 +4140,19 @@ export class GameEngine {
       this.spawnWisp(gap, z, true);
       return;
     }
-    let x = (Math.random() * 2 - 1) * (STEER_RANGE - 1);
+    let x = (Math.random() * 2 - 1) * (laneLimit - 1);
     const s = 1.45 + Math.random() * (0.95 + d * 0.8);
     for (const w of this.wisps) {
       if (w.active && Math.abs(w.z - z) < 9 && Math.abs(w.x - x) < s + 2.2) {
-        x = clamp(w.x + (x > w.x ? 1 : -1) * (s + 4.0), -STEER_RANGE + 1, STEER_RANGE - 1);
+        x = clamp(w.x + (x > w.x ? 1 : -1) * (s + 4.0), -laneLimit + 1, laneLimit - 1);
       }
     }
     this.spawnRockAt(x, z, s);
     if (Math.random() < 0.35 + d * 0.45) {
       const x2 = clamp(
         x + (Math.random() < 0.5 ? -1 : 1) * (6.2 + Math.random() * 6),
-        -STEER_RANGE,
-        STEER_RANGE,
+        -laneLimit,
+        laneLimit,
       );
       this.spawnRockAt(x2, z - 6 + Math.random() * 12, 1.3 + Math.random() * 0.8);
     }
@@ -3716,27 +4162,30 @@ export class GameEngine {
     const m = this.mines.find((q) => !q.active);
     if (!m) return;
     const isMangrove = this.environment === "mangrove";
+    const isCanal = this.environment === "canal";
+    const mineBound = isCanal ? STEER_RANGE - 2.3 : STEER_RANGE - 1.5;
     const applyMineVisuals = (target: Mine) => {
-      target.shellBody.visible = !isMangrove;
+      target.shellBody.visible = !isMangrove && !isCanal;
       target.tangleBody.visible = isMangrove;
-      target.beacon.color.setHex(isMangrove ? 0xff4d28 : 0xff1a10);
+      target.canalBuoyBody.visible = isCanal;
+      target.beacon.color.setHex(isMangrove ? 0xff4d28 : isCanal ? 0xff3b1f : 0xff1a10);
       target.beacon.emissive.setRGB(
-        isMangrove ? 1.0 : 1.0,
-        isMangrove ? 0.28 : 0.15,
-        isMangrove ? 0.14 : 0.08,
+        1.0,
+        isMangrove ? 0.28 : isCanal ? 0.24 : 0.15,
+        isMangrove ? 0.14 : isCanal ? 0.10 : 0.08,
       );
       (target.halo.material as THREE.SpriteMaterial).color.setRGB(
-        isMangrove ? 1.0 : 1.0,
-        isMangrove ? 0.30 : 0.18,
-        isMangrove ? 0.14 : 0.10,
+        1.0,
+        isMangrove ? 0.30 : isCanal ? 0.26 : 0.18,
+        isMangrove ? 0.14 : isCanal ? 0.12 : 0.10,
       );
     };
 
     const z = this.boat.position.z - (100 + Math.random() * 28);
     const x = clamp(
       this.boat.position.x + (Math.random() - 0.5) * 20,
-      -STEER_RANGE + 1.5,
-      STEER_RANGE - 1.5,
+      -mineBound,
+      mineBound,
     );
     m.active = true;
     m.passed = false;
@@ -3750,7 +4199,9 @@ export class GameEngine {
       this.cb.onAlert({
         text: isMangrove
           ? "Tangled thorn roots — keep clear of crimson spores"
-          : "Sea mines — keep clear of red beacons",
+          : isCanal
+            ? "Harbor hazard buoys — keep clear of red beacons"
+            : "Sea mines — keep clear of red beacons",
         tone: "warn",
       });
       this.audio.warn();
@@ -3761,7 +4212,7 @@ export class GameEngine {
       if (m2) {
         m2.active = true;
         m2.passed = false;
-        m2.x = clamp(x + (x > 0 ? -7.5 : 7.5), -STEER_RANGE + 1.5, STEER_RANGE - 1.5);
+        m2.x = clamp(x + (x > 0 ? -7.5 : 7.5), -mineBound, mineBound);
         m2.z = z - 8;
         m2.phase = Math.random() * 10;
         applyMineVisuals(m2);
@@ -3794,22 +4245,26 @@ export class GameEngine {
   private spawnLog(dist?: number) {
     const l = this.logs.find((q) => !q.active);
     if (!l) return;
+    const isCanal = this.environment === "canal";
     const d = Math.min(1, this.runTime / 140);
     const fromLeft = Math.random() < 0.5;
     const ahead = dist ?? 95 + Math.random() * 30;
     const eta = ahead / Math.max(this.speed, 10);
-    l.vx = (fromLeft ? 1 : -1) * (2.6 + Math.random() * 2.8 + d * 2.6);
-    const meetX = clamp(this.boat.position.x + (Math.random() - 0.5) * 14, -STEER_RANGE, STEER_RANGE);
+    l.vx = (fromLeft ? 1 : -1) * (isCanal ? 1.8 + Math.random() * 1.9 + d * 1.6 : 2.6 + Math.random() * 2.8 + d * 2.6);
+    const laneLim = isCanal ? STEER_RANGE - 3.5 : STEER_RANGE;
+    const meetX = clamp(this.boat.position.x + (Math.random() - 0.5) * 14, -laneLim, laneLim);
     l.x = dist ? meetX : meetX - l.vx * eta;
     l.z = this.boat.position.z - ahead;
-    l.ang = (Math.random() - 0.5) * 0.9;
+    l.ang = (Math.random() - 0.5) * (isCanal ? 0.55 : 0.9);
     l.active = true;
     l.hit = false;
     l.sink = 0;
     l.minD = 99;
     l.passed = false;
+    l.driftBody.visible = !isCanal;
+    l.cargoBody.visible = isCanal;
     l.group.visible = true;
-    l.roll.rotation.x = Math.random() * 6;
+    l.roll.rotation.x = isCanal ? 0 : Math.random() * 6;
   }
 
   private spawnWhirl(dist?: number) {
@@ -3855,6 +4310,27 @@ export class GameEngine {
     j.z = this.boat.position.z - (100 + Math.random() * 30);
     j.phase = Math.random() * 8;
     j.group.visible = true;
+  }
+
+  private spawnCanalFloat() {
+    const cf = this.canalFloats.find((q) => !q.active);
+    if (!cf) return;
+    const z = this.boat.position.z - (102 + Math.random() * 28);
+    let x = (Math.random() * 2 - 1) * (STEER_RANGE - 4.5);
+    // keep clear of active barges and jetties
+    for (let i = 0; i < 4; i++) {
+      const blocked =
+        this.canalBarges.some((cb) => cb.active && Math.abs(cb.z - z) < 12 && Math.abs(cb.x - x) < 4.5) ||
+        this.canalJetties.some((cj) => cj.active && Math.abs(cj.z - z) < 10 && x >= cj.xMin - 2 && x <= cj.xMax + 2);
+      if (!blocked) break;
+      x = (Math.random() * 2 - 1) * (STEER_RANGE - 4.5);
+    }
+    cf.active = true;
+    cf.x = x;
+    cf.z = z;
+    cf.phase = Math.random() * 8;
+    cf.rig.group.position.set(x, this.surf(x, z), z);
+    cf.rig.group.visible = true;
   }
 
   private spawnFallenTrunk(d: number) {
@@ -3951,6 +4427,73 @@ export class GameEngine {
     }
   }
 
+  private spawnCanalJetty(d: number) {
+    const cj = this.canalJetties.find((q) => !q.active);
+    if (!cj) return;
+    const z = this.boat.position.z - (112 + Math.random() * 24);
+    if (
+      this.canalJetties.some((other) => other.active && Math.abs(other.z - z) < 24) ||
+      this.rocks.some((r) => r.active && Math.abs(r.z - z) < 12)
+    ) {
+      return;
+    }
+    const side: -1 | 1 = Math.random() < 0.5 ? -1 : 1;
+    const bankX = side * CANAL_QUAY_X;
+    const reach = cj.rig.length * (0.9 + d * 0.2);
+    const tipX = bankX - side * reach;
+    cj.active = true;
+    cj.hit = false;
+    cj.passed = false;
+    cj.side = side;
+    cj.z = z;
+    cj.tipX = tipX;
+    cj.xMin = Math.min(bankX, tipX);
+    cj.xMax = Math.max(bankX, tipX);
+    cj.rig.group.position.set(bankX, 0, z);
+    cj.rig.group.rotation.y = side === -1 ? 0 : Math.PI;
+    cj.rig.group.scale.set(reach / cj.rig.length, 1.0, 1.0);
+    cj.rig.group.visible = true;
+
+    const openX = -side * (4.5 + Math.random() * 5.0);
+    this.spawnWisp(openX, z, true);
+  }
+
+  private spawnCanalBarge(d: number) {
+    const cb = this.canalBarges.find((q) => !q.active);
+    if (!cb) return;
+    const z = this.boat.position.z - (118 + Math.random() * 26);
+    if (this.canalJetties.some((cj) => cj.active && Math.abs(cj.z - z) < 16)) return;
+
+    const lanes = [-9.2, -3.5, 3.5, 9.2];
+    let x = lanes[Math.floor(Math.random() * lanes.length)];
+    for (let i = 0; i < 3; i++) {
+      if (Math.abs(x - this.boat.position.x) > 3.0) break;
+      x = lanes[Math.floor(Math.random() * lanes.length)];
+    }
+    if (this.canalBarges.some((other) => other.active && Math.abs(other.z - z) < 20 && Math.abs(other.x - x) < 4)) {
+      x = -x;
+    }
+
+    const oncoming = Math.random() < 0.65;
+    cb.active = true;
+    cb.hit = false;
+    cb.passed = false;
+    cb.x = x;
+    cb.z = z;
+    cb.vz = oncoming ? 4.2 + d * 2.4 : -(3.2 + d * 1.8);
+    cb.vx = (Math.random() - 0.5) * 0.6;
+    cb.phase = Math.random() * Math.PI * 2;
+    cb.rig.group.position.set(x, 0, z);
+    cb.rig.group.rotation.y = oncoming ? 0 : Math.PI;
+    cb.rig.group.visible = true;
+
+    if (!this.canalBargeAlertShown) {
+      this.canalBargeAlertShown = true;
+      this.cb.onAlert({ text: "Canal supply barges ahead — watch bow lanterns", tone: "warn" });
+      this.audio.warn();
+    }
+  }
+
   private clearEntities() {
     for (const w of this.wisps) {
       w.active = false;
@@ -4019,6 +4562,18 @@ export class GameEngine {
     for (const fk of this.forkIslets) {
       fk.active = false;
       fk.mesh.visible = false;
+    }
+    for (const cj of this.canalJetties) {
+      cj.active = false;
+      cj.rig.group.visible = false;
+    }
+    for (const cb of this.canalBarges) {
+      cb.active = false;
+      cb.rig.group.visible = false;
+    }
+    for (const cf of this.canalFloats) {
+      cf.active = false;
+      cf.rig.group.visible = false;
     }
     const startArea = resolveAreaKey(this.environment, 0);
     this.currentBiome = startArea.key;
@@ -4225,11 +4780,13 @@ export class GameEngine {
     const bx = this.boat.position.x;
     const bz = this.boat.position.z;
     const side = bx >= r.x ? 1 : -1;
+    const isCanal = this.environment === "canal";
     this.pushVx = side * 13;
-    this.audio.thud();
+    if (isCanal) this.audio.canalQuayBump(side * 0.5);
+    else this.audio.thud();
     const mx = (bx + r.x) / 2;
-    this.burst(mx, 0.6, bz - 1, C.foam, 26, 7, 0.34, 0.9, 7, 2.2);
-    this.burst(mx, 0.5, bz - 1, C.wood, 8, 5, 0.2, 0.8, 9, 1.5);
+    this.burst(mx, 0.6, bz - 1, C.foam, isCanal ? 14 : 26, 7, 0.34, 0.9, 7, 2.2);
+    this.burst(mx, 0.5, bz - 1, C.wood, isCanal ? 18 : 8, 5.5, 0.22, 0.8, 9, 1.5);
     this.spawnRing(mx, bz - 1, 4, 1.3, 1.4);
     this.damage(20, 0.85, bx, bz);
   }
@@ -4242,12 +4799,13 @@ export class GameEngine {
     const side = bx >= m.x ? 1 : -1;
     this.pushVx = side * 15;
     const isMangrove = this.environment === "mangrove";
+    const isCanal = this.environment === "canal";
     if (isMangrove) this.audio.crack();
     else this.audio.mineBoom();
     const y = this.surf(m.x, m.z);
     this.burst(m.x, y + 0.6, m.z, isMangrove ? C.spore : C.amber, 30, 9.5, 0.44, 1.0, 6, 1.8);
     this.burst(m.x, y + 0.4, m.z, isMangrove ? C.moss : C.crimson, 20, 8, 0.36, 0.8, 5, 2.0);
-    this.burst(m.x, y + 0.5, m.z, C.foam, 20, 8, 0.34, 1.0, 8, 1.8);
+    this.burst(m.x, y + 0.5, m.z, isCanal ? C.wood : C.foam, 18, 8, 0.32, 0.95, 8, 1.8);
     this.spawnRing(m.x, m.z, 6.0, 1.4, 1.5);
     this.spawnRing(m.x, m.z, 4.0, 1.0, 1.1);
     this.damage(22, 1.15, bx, bz);
@@ -4315,6 +4873,32 @@ export class GameEngine {
     this.damage(18, 0.82, bx, bz);
   }
 
+  private hitCanalJetty(cj: CanalJetty) {
+    cj.hit = true;
+    const bx = this.boat.position.x;
+    const bz = this.boat.position.z;
+    this.pushVx = -cj.side * 12;
+    this.audio.canalQuayBump(cj.side * 0.6);
+    this.burst(bx, 0.7, cj.z, C.wood, 22, 7, 0.24, 0.9, 8, 1.5);
+    this.burst(bx, 0.8, cj.z, C.amber, 14, 6, 0.26, 0.75, 6, 1.8);
+    this.spawnRing(bx, cj.z, 4.2, 1.3, 1.3);
+    this.damage(18, 0.85, bx, bz);
+  }
+
+  private hitCanalBarge(cb: CanalBarge) {
+    cb.hit = true;
+    const bx = this.boat.position.x;
+    const bz = this.boat.position.z;
+    const side = bx >= cb.x ? 1 : -1;
+    this.pushVx = side * 13.5;
+    this.audio.thud();
+    this.burst(bx, 0.7, bz - 1, C.wood, 20, 6.8, 0.24, 0.9, 8, 1.6);
+    this.burst(bx, 0.6, bz - 1, C.amber, 14, 5.8, 0.26, 0.75, 6, 1.8);
+    this.burst(bx, 0.4, bz - 1, C.foam, 16, 6.5, 0.3, 0.85, 7, 2.0);
+    this.spawnRing(bx, bz - 1, 4.6, 1.3, 1.4);
+    this.damage(20, 0.9, bx, bz);
+  }
+
   private fireStrike(s: Strike) {
     s.active = false;
     this.uStrike[s.idx].w = 0;
@@ -4356,6 +4940,30 @@ export class GameEngine {
     this.spawnRing(j.x, j.z, 4, 1.2, 1);
     this.tmpV2.set(j.x, y + 1.4, j.z);
     this.popup(this.tmpV2, `+${gained} LUMEN`, "gold");
+  }
+
+  private catchCanalFloat(cf: CanalFloat) {
+    cf.active = false;
+    cf.rig.group.visible = false;
+    const bonusLights = 10;
+    this.wispsCaught += bonusLights;
+    const gained = Math.round(320 * this.diffMult);
+    this.score += gained;
+    this.energy = Math.min(100, this.energy + 22);
+    this.slowmoT = 1.1;
+    this.timeScale = 0.45;
+    this.lanternPulse = 2.0;
+    this.addShake(0.25);
+    this.audio.jelly();
+    this.haptic([15, 45, 20]);
+    this.cb.onFlash("jelly");
+    const y = cf.rig.group.position.y + 1.4;
+    this.burst(cf.x, y, cf.z, C.gold, 50, 7.5, 0.5, 1.4, 1.5, 1.6);
+    this.burst(cf.x, y, cf.z, C.teal, 18, 4.8, 0.36, 1.2, 2, 1.8);
+    this.spawnRing(cf.x, cf.z, 6, 1.6, 1.6);
+    this.spawnRing(cf.x, cf.z, 4, 1.2, 1);
+    this.tmpV2.set(cf.x, y + 1.4, cf.z);
+    this.popup(this.tmpV2, `+${bonusLights} LIGHTS · +${gained}`, "gold");
   }
 
   private endRun() {
@@ -4418,10 +5026,12 @@ export class GameEngine {
     if (this.state === "playing") this.runTime += dt;
     const d = menu ? 0 : clamp(this.runTime / 135, 0, 1);
 
+    const isSea = this.environment === "sea";
     const isMangrove = this.environment === "mangrove";
+    const isCanal = this.environment === "canal";
 
     // ---------- weather ----------
-    if (this.state === "playing" && !isMangrove) {
+    if (this.state === "playing" && isSea) {
       this.stormTimer -= dt;
       if (this.stormTimer <= 0) {
         if (this.stormOn) {
@@ -4436,26 +5046,30 @@ export class GameEngine {
           this.audio.warn();
         }
       }
-    } else if (isMangrove) {
+    } else if (!isSea) {
       this.stormOn = false;
     }
     this.storm = damp(this.storm, this.stormOn ? 1 : 0, 0.6, rawDt);
     if (this.storm < 0.002 && !this.stormOn) this.storm = 0;
     this.amp =
-      (isMangrove ? 0.36 + this.storm * 0.2 + d * 0.05 : 1 + this.storm * 0.8 + d * 0.16) *
-      mult;
+      (isCanal
+        ? 0.24 + d * 0.04
+        : isMangrove
+          ? 0.36 + this.storm * 0.2 + d * 0.05
+          : 1 + this.storm * 0.8 + d * 0.16) * mult;
     this.flash *= Math.exp(-5.5 * rawDt);
     if (this.flash < 0.003) this.flash = 0;
-    this.windX = this.storm * (isMangrove ? 2.4 : 7.8) * Math.sin(this.t * 0.45 + 1.3);
+    this.windX = isCanal ? 0 : this.storm * (isMangrove ? 2.4 : 7.8) * Math.sin(this.t * 0.45 + 1.3);
     U.uAmp.value = this.amp;
     U.uStorm.value = this.storm;
     U.uFlash.value = this.flash;
     U.uMangrove.value = damp(U.uMangrove.value, isMangrove ? 1.0 : 0.0, 2.5, rawDt);
+    U.uCanal.value = damp(U.uCanal.value, isCanal ? 1.0 : 0.0, 2.5, rawDt);
     if (Math.abs(this.storm - this.lastRain) > 0.04) {
       this.lastRain = this.storm;
       this.audio.setRain(this.storm);
     }
-    if (!isMangrove && this.storm > 0.5) {
+    if (isSea && this.storm > 0.5) {
       this.ambientBoltT -= dt;
       if (this.ambientBoltT <= 0) {
         this.ambientBoltT = 3.5 + Math.random() * 5;
@@ -4467,6 +5081,7 @@ export class GameEngine {
     // ---------- speed ----------
     if (this.mSwarmBoostT > 0) this.mSwarmBoostT = Math.max(0, this.mSwarmBoostT - dt);
     if (this.mBankScrapeCd > 0) this.mBankScrapeCd = Math.max(0, this.mBankScrapeCd - dt);
+    if (this.canalBankScrapeCd > 0) this.canalBankScrapeCd = Math.max(0, this.canalBankScrapeCd - dt);
     if (this.mLilyRustleCd > 0) this.mLilyRustleCd = Math.max(0, this.mLilyRustleCd - dt);
     if (this.state === "playing") {
       const spec = BOAT_SPECS[this.boatLevel];
@@ -4534,7 +5149,7 @@ export class GameEngine {
     const milestoneZ = -nextMilestoneM * 10;
     const distToMilestoneM = (bz - milestoneZ) / 10;
 
-    if (!isMangrove && distToMilestoneM < 220 && distToMilestoneM > -30) {
+    if (isSea && distToMilestoneM < 220 && distToMilestoneM > -30) {
       this.lighthouse.visible = true;
       this.lighthouse.position.set(34, this.surf(34, milestoneZ) - 2.5, milestoneZ);
       this.lighthouseBeam.rotation.y = this.t * 0.8;
@@ -4622,6 +5237,42 @@ export class GameEngine {
       }
     } else {
       if (this.spiritHaven) this.spiritHaven.group.visible = false;
+    }
+
+    // ---------- canal district bridge havens (canal mode every 200m) ----------
+    if (isCanal && this.state === "playing" && bz <= milestoneZ && this.lastCanalHavenTriggered < nextMilestoneM) {
+      this.lastCanalHavenTriggered = nextMilestoneM;
+      this.audio.biomeCue();
+      this.energy = Math.min(100, this.energy + 50);
+      const havenBonus = 500;
+      this.score += havenBonus;
+      this.cb.onPopup({
+        text: `+${havenBonus} CANAL HAVEN`,
+        x: 50,
+        y: 35,
+        tone: "gold",
+      });
+      this.cb.onAlert({
+        text: `Canal Haven · ${nextMilestoneM}m Reached!`,
+        tone: "milestone",
+      });
+      this.lanternPulse = 2.0;
+      const bpx = boat.position.x;
+      for (let p = 0; p < 24; p++) {
+        this.emit(
+          bpx + (Math.random() - 0.5) * 3,
+          this.boatY + 1.2,
+          bz + (Math.random() - 0.5) * 3,
+          (Math.random() - 0.5) * 6,
+          2 + Math.random() * 4,
+          (Math.random() - 0.5) * 6,
+          new THREE.Color("#facc15"),
+          0.18,
+          1.2,
+          6,
+          0.5,
+        );
+      }
     }
 
     // ---------- currents: whirlpools + crosswind ----------
@@ -4728,6 +5379,20 @@ export class GameEngine {
         this.burst(nx + bankSide * 0.95, this.boatY + 0.65, bz - 0.5, C.moss, 10, 4.5, 0.24, 0.7, 6, 2);
         this.burst(nx + bankSide * 0.95, this.boatY + 0.5, bz - 0.5, C.wood, 5, 3.8, 0.20, 0.6, 8, 1.5);
       }
+    } else if (isCanal && Math.abs(nx) >= STEER_RANGE - 1.0) {
+      const bankSide = Math.sign(nx);
+      nx = clamp(nx, -(STEER_RANGE - 0.9), STEER_RANGE - 0.9);
+      if (this.state === "playing") {
+        this.pushVx += -bankSide * 26 * dt;
+        if (this.canalBankScrapeCd <= 0) {
+          this.canalBankScrapeCd = 0.45;
+          this.addShake(0.12);
+          this.haptic(14);
+          this.audio.canalQuayBump(bankSide * 0.85);
+          this.burst(nx + bankSide * 0.95, this.boatY + 0.55, bz - 0.5, C.wood, 8, 4.2, 0.22, 0.6, 8, 1.5);
+          this.burst(nx + bankSide * 0.95, this.boatY + 0.7, bz - 0.5, C.amber, 6, 3.8, 0.2, 0.55, 6, 1.8);
+        }
+      }
     }
     boat.position.x = clamp(nx, -STEER_RANGE - 1, STEER_RANGE + 1);
     const vx = (boat.position.x - prevX) / Math.max(dt, 0.0001);
@@ -4776,9 +5441,9 @@ export class GameEngine {
       this.lanternFade *
       (1 + Math.sin(this.t * 9.3) * 0.06 + Math.sin(this.t * 23.7) * 0.04) *
       (1 + this.lanternPulse * 0.8);
-    this.lanternLight.intensity = (isMangrove ? 54 : 42) * lampLevel;
-    this.lanternLight.distance = isMangrove ? 44 : 36;
-    this.lanternGlass.emissiveIntensity = (isMangrove ? 5.2 : 4.4) * lampLevel;
+    this.lanternLight.intensity = (isMangrove ? 54 : isCanal ? 48 : 42) * lampLevel;
+    this.lanternLight.distance = isMangrove ? 44 : isCanal ? 40 : 36;
+    this.lanternGlass.emissiveIntensity = (isMangrove ? 5.2 : isCanal ? 4.8 : 4.4) * lampLevel;
     if (this.flameMesh) {
       const fl = 0.84 + Math.sin(this.t * 13.7) * 0.15 + Math.sin(this.t * 29.3) * 0.07;
       this.flameMesh.scale.set(1, fl * lampLevel, 1);
@@ -4804,7 +5469,7 @@ export class GameEngine {
       if (this.rockTimer <= 0) {
         this.spawnRocks(d);
         const rockBase = lerp(BASE_TUNING.rockPaceStart, BASE_TUNING.rockPaceEnd, d);
-        this.rockTimer = (isMangrove ? rockBase * 1.22 : rockBase) / mult + Math.random() * (0.55 / mult);
+        this.rockTimer = (isMangrove ? rockBase * 1.22 : isCanal ? rockBase * 1.08 : rockBase) / mult + Math.random() * (0.55 / mult);
       }
       if (this.runTime > BASE_TUNING.mineUnlock / mult) {
         this.mineTimer -= dt;
@@ -4813,21 +5478,21 @@ export class GameEngine {
           this.mineTimer = lerp(BASE_TUNING.minePaceStart, BASE_TUNING.minePaceEnd, d) / mult + Math.random() * (1.4 / mult);
         }
       }
-      if (!isMangrove && this.runTime > BASE_TUNING.logUnlock) {
+      if ((isSea || isCanal) && this.runTime > BASE_TUNING.logUnlock) {
         this.logTimer -= dt;
         if (this.logTimer <= 0) {
           this.spawnLog();
-          this.logTimer = lerp(6.8, 3.2, d) + Math.random() * 2.2;
+          this.logTimer = lerp(6.8, 3.2, d) / (isCanal ? 1.15 : 1) + Math.random() * 2.2;
         }
       }
-      if (!isMangrove && this.runTime > BASE_TUNING.waveUnlock) {
+      if (isSea && this.runTime > BASE_TUNING.waveUnlock) {
         this.waveTimer -= dt;
         if (this.waveTimer <= 0) {
           this.spawnRogueWave(d);
           this.waveTimer = lerp(11, 6.2, d) + Math.random() * 3.0;
         }
       }
-      if (!isMangrove && this.runTime > BASE_TUNING.whirlUnlock) {
+      if (isSea && this.runTime > BASE_TUNING.whirlUnlock) {
         this.whirlTimer -= dt;
         if (this.whirlTimer <= 0) {
           this.spawnWhirl();
@@ -4864,12 +5529,33 @@ export class GameEngine {
           }
         }
       }
+      if (isCanal) {
+        if (this.runTime > 8.5 / mult) {
+          this.canalJettyTimer -= dt;
+          if (this.canalJettyTimer <= 0) {
+            this.spawnCanalJetty(d);
+            this.canalJettyTimer = lerp(9.0, 5.2, d) / mult + Math.random() * (2.4 / mult);
+          }
+        }
+        if (this.runTime > 11.5 / mult) {
+          this.canalBargeTimer -= dt;
+          if (this.canalBargeTimer <= 0) {
+            this.spawnCanalBarge(d);
+            this.canalBargeTimer = lerp(10.5, 5.8, d) / mult + Math.random() * (2.8 / mult);
+          }
+        }
+      }
       this.jellyTimer -= dt;
       if (this.jellyTimer <= 0) {
-        this.spawnJelly();
-        this.jellyTimer = (this.currentBiome === "abyss" ? 7 : 21) + Math.random() * 8;
+        if (isCanal) {
+          this.spawnCanalFloat();
+          this.jellyTimer = 18 + Math.random() * 8;
+        } else {
+          this.spawnJelly();
+          this.jellyTimer = (this.currentBiome === "abyss" ? 7 : 21) + Math.random() * 8;
+        }
       }
-      if (!isMangrove && (this.currentBiome === "graveyard" || distMeters >= 680)) {
+      if (isSea && (this.currentBiome === "graveyard" || distMeters >= 680)) {
         this.shipwreckTimer -= dt;
         if (this.shipwreckTimer <= 0) {
           this.spawnShipwreck();
@@ -5059,7 +5745,12 @@ export class GameEngine {
       if (l.hit) l.sink += dt;
       l.group.position.set(l.x, ly - 0.14 - l.sink * 1.1, l.z);
       l.group.rotation.set(0, -l.ang, tilt + l.sink * 0.5);
-      l.roll.rotation.x += dt * (0.5 + (l.hit ? 4 : 0));
+      if (isCanal) {
+        l.roll.rotation.x = 0;
+        l.group.rotation.x = Math.sin(this.t * 1.6 + l.x * 0.3) * 0.04;
+      } else {
+        l.roll.rotation.x += dt * (0.5 + (l.hit ? 4 : 0));
+      }
       if (Math.random() < 0.25) {
         const e = Math.random() < 0.5 ? 1 : -1;
         this.emit(l.x + ax * e, ly + 0.15, l.z + az * e, -l.vx * 0.3, 0.8, 1, C.spray, 0.2, 0.6, 3, 2);
@@ -5186,6 +5877,70 @@ export class GameEngine {
       }
     }
 
+    // ---------- canal quay repair jetties ----------
+    for (const cj of this.canalJetties) {
+      if (!cj.active) continue;
+      if (cj.z > behind + 4) {
+        cj.active = false;
+        cj.rig.group.visible = false;
+        continue;
+      }
+      const flicker = 0.85 + 0.15 * Math.sin(this.t * 7.2 + cj.z);
+      cj.rig.lanternMat.emissiveIntensity = 3.2 * flicker;
+      cj.rig.halo.scale.setScalar(3.3 * flicker);
+      if (!playing || cj.hit) continue;
+      const dz = cj.z - bz;
+      if (this.invulnT <= 0 && Math.abs(dz) < 1.65 && bx >= cj.xMin - 0.85 && bx <= cj.xMax + 0.85) {
+        this.hitCanalJetty(cj);
+      } else if (!cj.passed && dz > 2.4) {
+        cj.passed = true;
+        if (Math.abs(bx - cj.tipX) < 3.4) this.closeCall();
+      }
+    }
+
+    // ---------- canal cruising supply barges ----------
+    for (const cb of this.canalBarges) {
+      if (!cb.active) continue;
+      if (cb.z > behind + 8 || cb.z < bz - 220) {
+        cb.active = false;
+        cb.rig.group.visible = false;
+        continue;
+      }
+      cb.x = clamp(cb.x + cb.vx * dt, -(STEER_RANGE - 3.2), STEER_RANGE - 3.2);
+      cb.z += cb.vz * dt;
+      const by = this.surf(cb.x, cb.z);
+      cb.rig.group.position.set(cb.x, by - 0.04, cb.z);
+      cb.rig.group.rotation.z = Math.sin(this.t * 1.3 + cb.phase) * 0.025;
+      const bFlick = 0.88 + 0.12 * Math.sin(this.t * 8.4 + cb.phase);
+      cb.rig.lanternMat.emissiveIntensity = 3.4 * bFlick;
+      cb.rig.halo.scale.setScalar(3.1 * bFlick);
+      if (Math.random() < 0.35) {
+        const sternZ = cb.z + (cb.vz >= 0 ? -(cb.rig.halfL + 0.2) : cb.rig.halfL + 0.2);
+        this.emit(
+          cb.x + (Math.random() - 0.5) * 0.9,
+          by + 0.08,
+          sternZ,
+          (Math.random() - 0.5) * 0.6,
+          0.35,
+          -cb.vz * 0.25,
+          C.foam,
+          0.22,
+          0.55,
+          4,
+          1.8,
+        );
+      }
+      if (!playing || cb.hit) continue;
+      const dz = cb.z - bz;
+      const dx = Math.abs(bx - cb.x);
+      if (this.invulnT <= 0 && Math.abs(dz) < cb.rig.halfL + 1.1 && dx < cb.rig.halfW + 0.72) {
+        this.hitCanalBarge(cb);
+      } else if (!cb.passed && dz > cb.rig.halfL + 1.8) {
+        cb.passed = true;
+        if (dx < cb.rig.halfW + 2.5) this.closeCall();
+      }
+    }
+
     // ---------- jellies ----------
     for (const j of this.jellies) {
       if (!j.active) continue;
@@ -5218,6 +5973,28 @@ export class GameEngine {
       if (playing) {
         const dz = j.z - bz;
         if (dz > -4.5 && dz < 4.5 && Math.abs(j.x - bx) < 3.1) this.catchJelly(j);
+      }
+    }
+
+    // ---------- canal festival lantern floats ----------
+    for (const cf of this.canalFloats) {
+      if (!cf.active) continue;
+      if (cf.z > behind) {
+        cf.active = false;
+        cf.rig.group.visible = false;
+        continue;
+      }
+      const cy = this.surf(cf.x, cf.z) + 0.08 + Math.sin(this.t * 1.5 + cf.phase) * 0.08;
+      cf.rig.group.position.set(cf.x, cy, cf.z);
+      cf.rig.group.rotation.y += dt * 0.55;
+      cf.rig.satellites.rotation.y -= dt * 1.1;
+      cf.rig.satellites.position.y = Math.sin(this.t * 2.2 + cf.phase) * 0.14;
+      const pulse = 0.85 + 0.18 * Math.sin(this.t * 3.0 + cf.phase);
+      cf.rig.coreMat.emissiveIntensity = 3.0 * pulse;
+      cf.rig.halo.scale.setScalar(5.8 * pulse);
+      if (playing) {
+        const dz = cf.z - bz;
+        if (dz > -4.5 && dz < 4.5 && Math.abs(cf.x - bx) < 3.2) this.catchCanalFloat(cf);
       }
     }
 
@@ -5375,16 +6152,24 @@ export class GameEngine {
       (this.viewH / (2 * Math.tan(THREE.MathUtils.degToRad(cam.fov) / 2))) *
       this.renderer.getPixelRatio();
     if (this.fMat) this.fMat.uniforms.uScale.value = this.pMat.uniforms.uScale.value;
+    if (this.canalGlowMat) {
+      this.canalGlowMat.uniforms.uScale.value = this.viewH * this.renderer.getPixelRatio() * 0.85;
+      const dIdx = getCanalDistrictIndex(this.state === "playing" ? distMeters : 0);
+      const targetGlow = dIdx === 0 ? 0.36 : dIdx === 1 ? 0.72 : dIdx === 2 ? 0.98 : 1.28;
+      this.canalGlowMat.uniforms.uK.value = lerp(this.canalGlowMat.uniforms.uK.value, isCanal ? targetGlow : 0, bLerp);
+    }
 
     // ---------- scenery & uniforms ----------
     this.waterMesh.position.set(bx, 0, bz - 4);
     this.skyMesh.position.copy(cam.position);
     this.uCloudShift.value = bz * 0.0006;
     this.uBoat.set(bx, bz, this.vxSmooth / Math.max(this.speed, 6), clamp(this.speed / 19, 0, 1.25));
-    if (!isMangrove) {
+    if (isSea) {
       for (const isle of this.islands) {
         if (isle.position.z > bz - 120) this.recycleIsland(isle);
       }
+    } else if (isCanal) {
+      this.updateCanalCorridor(bz);
     } else {
       this.updateMangroveForest(bz);
       if (!over) {
@@ -5444,8 +6229,14 @@ export class GameEngine {
     const col = this.uGlowCol;
     this.lanternLight.getWorldPosition(this.tmpV);
     const isMangrove = this.environment === "mangrove";
-    pos[0].set(this.tmpV.x, this.tmpV.y, this.tmpV.z, (isMangrove ? 2.05 : 1.5) * lampLevel);
-    col[0].set(1.0, isMangrove ? 0.68 : 0.52, isMangrove ? 0.32 : 0.2);
+    const isCanal = this.environment === "canal";
+    pos[0].set(
+      this.tmpV.x,
+      this.tmpV.y,
+      this.tmpV.z,
+      (isMangrove ? 2.05 : isCanal ? 1.85 : 1.5) * lampLevel,
+    );
+    col[0].set(1.0, isMangrove ? 0.68 : isCanal ? 0.62 : 0.52, isMangrove ? 0.32 : isCanal ? 0.28 : 0.2);
     let n = 1;
     for (const j of this.jellies) {
       if (j.active && n < this.NG && Math.abs(j.z - bz) < 70) {
@@ -5486,6 +6277,30 @@ export class GameEngine {
           col[n].set(0.26, 0.90, 0.76);
           n++;
           bioAdded++;
+        }
+      }
+    }
+    if (isCanal) {
+      for (const cf of this.canalFloats) {
+        if (cf.active && n < this.NG && Math.abs(cf.z - bz) < 75) {
+          pos[n].set(cf.x, cf.rig.group.position.y + 1.65, cf.z, 2.5);
+          col[n].set(1.0, 0.78, 0.28);
+          n++;
+        }
+      }
+      for (const cj of this.canalJetties) {
+        if (cj.active && n < this.NG && Math.abs(cj.z - bz) < 68) {
+          pos[n].set(cj.tipX, 2.95, cj.z, 1.45);
+          col[n].set(1.0, 0.72, 0.34);
+          n++;
+        }
+      }
+      for (const cb of this.canalBarges) {
+        if (cb.active && n < this.NG && Math.abs(cb.z - bz) < 75) {
+          const bowZ = cb.z + (cb.vz >= 0 ? cb.rig.halfL - 0.45 : -(cb.rig.halfL - 0.45));
+          pos[n].set(cb.x, 1.48, bowZ, 1.55);
+          col[n].set(1.0, 0.70, 0.32);
+          n++;
         }
       }
     }

@@ -24,6 +24,11 @@ import {
   makeRootSnagGeometry,
   makeWaterLilyGeometry,
 } from "./mangrove";
+import {
+  CANAL_BLOCK_LENGTH,
+  makeCanalBlock,
+  makeCanalMaterials,
+} from "./canal";
 
 const clamp = THREE.MathUtils.clamp;
 const smooth = THREE.MathUtils.smoothstep;
@@ -1559,6 +1564,118 @@ function buildMangrovePreviewScene(
   };
 }
 
+/* ---------------- Historic Canal 3D Scene ---------------- */
+
+function buildCanalPreviewScene(
+  woodTex: THREE.CanvasTexture,
+  deckTex: THREE.CanvasTexture,
+  clothTex: THREE.CanvasTexture,
+  glowTex: THREE.Texture,
+): PreviewSceneRig {
+  const scene = new THREE.Scene();
+  const camera = new THREE.PerspectiveCamera(48, 2, 0.3, 700);
+  scene.fog = new THREE.FogExp2(0xe6b68c, 0.0072);
+
+  const sunDir = new THREE.Vector3(0.62, 0.36, -0.69).normalize();
+  const moonDir = new THREE.Vector3(-0.07, 0.24, -0.968).normalize();
+
+  const { sharedUniforms, glowPos, glowCol } = createSkyAndWater(scene, {
+    mangrove: 0.0,
+    horizon: new THREE.Color("#ffc48a"),
+    mid: new THREE.Color("#7d86ab"),
+    zenith: new THREE.Color("#3b6cb0"),
+    haze: new THREE.Color("#e6b68c"),
+    sunColor: new THREE.Color("#ffd2a0"),
+    sunDir,
+    moonDir,
+    sunGlare: 0.68,
+    deep: new THREE.Color("#0f3a43"),
+    scatter: new THREE.Color("#28747c"),
+    fogDensity: 0.0072,
+    amp: 0.14,
+  });
+
+  const hemi = new THREE.HemisphereLight(0x9db6e6, 0x6a5a4a, 1.15);
+  const sun = new THREE.DirectionalLight(0xffd2a0, 2.5);
+  sun.position.set(60, 38, -30);
+  const rim = new THREE.DirectionalLight(0x9bb8e6, 0.45);
+  rim.position.set(-20, 14, 24);
+  scene.add(hemi, sun, rim);
+
+  const canalMats = makeCanalMaterials();
+  const blocks = [
+    { z: 6, block: makeCanalBlock(11, 0, "plain", "low") },
+    { z: 6 - CANAL_BLOCK_LENGTH, block: makeCanalBlock(23, 0, "bridge", "low") },
+  ];
+
+  const lampMat = new THREE.SpriteMaterial({
+    map: glowTex,
+    color: new THREE.Color(0xffb85c),
+    transparent: true,
+    opacity: 0.48,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+  });
+
+  for (const entry of blocks) {
+    const g = new THREE.Group();
+    g.position.z = entry.z;
+    g.add(
+      new THREE.Mesh(entry.block.brick, canalMats.brick),
+      new THREE.Mesh(entry.block.stone, canalMats.stone),
+      new THREE.Mesh(entry.block.paint, canalMats.paint),
+      new THREE.Mesh(entry.block.roof, canalMats.roof),
+      new THREE.Mesh(entry.block.glass, canalMats.glass),
+    );
+    for (const lp of entry.block.lamps) {
+      const sp = new THREE.Sprite(lampMat);
+      sp.position.set(lp[0], lp[1], lp[2]);
+      sp.scale.setScalar(2.4);
+      g.add(sp);
+    }
+    scene.add(g);
+  }
+
+  const boat = buildPreviewBoat(woodTex, deckTex, clothTex, glowTex, 32);
+  boat.group.position.set(-0.3, -0.08, -7.2);
+  boat.group.scale.setScalar(0.84);
+  boat.group.rotation.y = 0.55;
+  scene.add(boat.group);
+
+  glowCol[0].setRGB(1.0, 0.62, 0.28);
+  glowCol[1].setRGB(1.0, 0.72, 0.36);
+  glowCol[2].setRGB(1.0, 0.72, 0.36);
+  glowPos[1].set(-16.5, 4.2, -10.0, 1.15);
+  glowPos[2].set(16.5, 4.2, -18.0, 1.15);
+
+  return {
+    scene,
+    camera,
+    update: (t: number, locked: boolean) => {
+      sharedUniforms.uTime.value = t;
+      camera.position.set(
+        0.4 + Math.sin(t * 0.32) * 0.35,
+        3.2 + Math.sin(t * 0.52) * 0.08,
+        11.5 + Math.cos(t * 0.25) * 0.2,
+      );
+      camera.lookAt(0, 3.2, -32);
+
+      const bx = boat.group.position.x;
+      const bz = boat.group.position.z;
+      const h = waveH(bx, bz, t) * 0.14;
+      boat.group.position.y = h - 0.08;
+      boat.group.rotation.z = Math.sin(t * 1.1) * 0.025;
+
+      const dim = locked ? 0.76 : 1.0;
+      const flicker = 1 + 0.08 * Math.sin(t * 10.5) + 0.04 * Math.sin(t * 21.4);
+      boat.lanternLight.intensity = 34 * flicker * dim;
+      boat.lanternHalo.scale.setScalar(3.1 * flicker);
+      boat.lanternPivot.rotation.z = Math.sin(t * 1.8) * 0.05;
+      updateLanternGlowUniform(boat, glowPos[0], 1.85 * flicker * dim);
+    },
+  };
+}
+
 /* ---------------- singleton offscreen WebGL manager ---------------- */
 
 interface TargetEntry {
@@ -1574,6 +1691,7 @@ class PreviewManager {
   private renderer: THREE.WebGLRenderer | null = null;
   private seaRig: PreviewSceneRig | null = null;
   private mangroveRig: PreviewSceneRig | null = null;
+  private canalRig: PreviewSceneRig | null = null;
   private boatRigs: Partial<Record<BoatLevel, PreviewSceneRig>> = {};
   private targets = new Map<HTMLCanvasElement, TargetEntry>();
   private raf = 0;
@@ -1607,6 +1725,7 @@ class PreviewManager {
 
       this.seaRig = buildSeaPreviewScene(woodTex, deckTex, clothTex, glowTex, foamTex);
       this.mangroveRig = buildMangrovePreviewScene(woodTex, deckTex, clothTex, barkTex, glowTex);
+      this.canalRig = buildCanalPreviewScene(woodTex, deckTex, clothTex, glowTex);
       this.boatRigs[1] = buildBoatShowcaseScene(1, glowTex);
       this.boatRigs[2] = buildBoatShowcaseScene(2, glowTex);
       this.boatRigs[3] = buildBoatShowcaseScene(3, glowTex);
@@ -1677,6 +1796,8 @@ class PreviewManager {
           ? this.boatRigs[level]
           : mode === "sea"
           ? this.seaRig
+          : mode === "canal"
+          ? this.canalRig
           : this.mangroveRig;
       if (!rig) continue;
 

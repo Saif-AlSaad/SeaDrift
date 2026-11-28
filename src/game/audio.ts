@@ -1,4 +1,5 @@
 /* Procedural audio for DRIFT — no assets, all WebAudio synthesis. */
+import type { EnvironmentMode } from "./storage";
 
 const PENTA = [
   261.63, 293.66, 329.63, 392.0, 440.0, 523.25, 587.33, 659.25, 783.99, 880.0,
@@ -10,9 +11,10 @@ export class GameAudio {
   private muted = false;
   private volume = 0.8;
   private ambientOn = false;
-  private environment: "sea" | "mangrove" = "sea";
+  private environment: EnvironmentMode = "sea";
   private seaAmbGain: GainNode | null = null;
   private mangroveAmbGain: GainNode | null = null;
+  private canalAmbGain: GainNode | null = null;
   private rumbleGain: GainNode | null = null;
   private rainGain: GainNode | null = null;
 
@@ -61,8 +63,8 @@ export class GameAudio {
     }
   }
 
-  /** Cross-fade background ambience between open ocean swell and midnight mangrove forest. */
-  setEnvironment(env: "sea" | "mangrove") {
+  /** Cross-fade background ambience between open ocean, midnight mangrove, and historic canal. */
+  setEnvironment(env: EnvironmentMode) {
     this.environment = env;
     if (!this.ctx) return;
     const t = this.ctx.currentTime;
@@ -71,6 +73,9 @@ export class GameAudio {
     }
     if (this.mangroveAmbGain) {
       this.mangroveAmbGain.gain.setTargetAtTime(env === "mangrove" ? 1 : 0, t, 0.45);
+    }
+    if (this.canalAmbGain) {
+      this.canalAmbGain.gain.setTargetAtTime(env === "canal" ? 1 : 0, t, 0.45);
     }
   }
 
@@ -399,6 +404,25 @@ export class GameAudio {
     src.start();
   }
 
+  /** Wooden hull brushing against a canal stone quay wall. */
+  canalQuayBump(pan = 0) {
+    const ctx = this.ensure();
+    if (!ctx || !this.master || this.muted) return;
+    const dest = this.pannedDest(pan);
+    const t0 = ctx.currentTime;
+    const osc = ctx.createOscillator();
+    osc.type = "triangle";
+    osc.frequency.setValueAtTime(130, t0);
+    osc.frequency.exponentialRampToValueAtTime(62, t0 + 0.18);
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.001, t0);
+    g.gain.exponentialRampToValueAtTime(0.09, t0 + 0.015);
+    g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.22);
+    osc.connect(g).connect(dest);
+    osc.start(t0);
+    osc.stop(t0 + 0.24);
+  }
+
   /** Atmospheric chime cue when crossing into a new biome. */
   biomeCue() {
     const ctx = this.ensure();
@@ -433,6 +457,10 @@ export class GameAudio {
     this.mangroveAmbGain = ctx.createGain();
     this.mangroveAmbGain.gain.value = this.environment === "mangrove" ? 1 : 0;
     this.mangroveAmbGain.connect(this.master);
+
+    this.canalAmbGain = ctx.createGain();
+    this.canalAmbGain.gain.value = this.environment === "canal" ? 1 : 0;
+    this.canalAmbGain.connect(this.master);
 
     // Sea Pad
     const padGain = ctx.createGain();
@@ -514,6 +542,28 @@ export class GameAudio {
     insectOsc.connect(insectGain).connect(this.mangroveAmbGain);
     insectOsc.start();
     insectLfo.start();
+
+    // Canal sheltered stone-quay water lapping + soft town breeze
+    const canalLapLp = ctx.createBiquadFilter();
+    canalLapLp.type = "lowpass";
+    canalLapLp.frequency.value = 195;
+    const canalLapGain = ctx.createGain();
+    canalLapGain.gain.value = 0.028;
+    src.connect(canalLapLp).connect(canalLapGain).connect(this.canalAmbGain);
+    const canalLfo = ctx.createOscillator();
+    canalLfo.frequency.value = 0.14;
+    const canalLfoAmt = ctx.createGain();
+    canalLfoAmt.gain.value = 0.012;
+    canalLfo.connect(canalLfoAmt).connect(canalLapGain.gain);
+    canalLfo.start();
+
+    const canalAirBp = ctx.createBiquadFilter();
+    canalAirBp.type = "bandpass";
+    canalAirBp.frequency.value = 460;
+    canalAirBp.Q.value = 0.7;
+    const canalAirGain = ctx.createGain();
+    canalAirGain.gain.value = 0.008;
+    src.connect(canalAirBp).connect(canalAirGain).connect(this.canalAmbGain);
 
     // Whirlpool rumble + rain: shared layers across environments
     const rumbleLp = ctx.createBiquadFilter();

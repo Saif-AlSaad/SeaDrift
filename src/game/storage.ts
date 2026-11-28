@@ -5,12 +5,13 @@ export type { BoatLevel };
 export type QualitySetting = "auto" | "high" | "medium" | "low";
 export type SunGlareSetting = "soft" | "minimal";
 export type TouchControl = "drag" | "follow" | "tilt";
-export type EnvironmentMode = "sea" | "mangrove";
+export type EnvironmentMode = "sea" | "mangrove" | "canal";
 
-/** Fixed difficulty multipliers per game mode: Sea Mode = 1.0x, Mangrove Mode = 1.3x. */
+/** Fixed difficulty multipliers per game mode: Sea Mode = 1.0x, Canal Mode = 1.15x, Mangrove Mode = 1.3x. */
 export const MODE_DIFFICULTY_MULT: Record<EnvironmentMode, number> = {
   sea: 1.0,
   mangrove: 1.3,
+  canal: 1.15,
 };
 
 export const MANGROVE_UNLOCK_COST = 2000;
@@ -104,8 +105,9 @@ export function loadSettings(): GameSettings {
           ? parsed.autoFullscreen
           : DEFAULT_SETTINGS.autoFullscreen,
       environment:
-        parsed.environment === "mangrove" && loadUnlockedModes().includes("mangrove")
-          ? "mangrove"
+        (parsed.environment === "mangrove" || parsed.environment === "canal") &&
+        loadUnlockedModes().includes(parsed.environment)
+          ? parsed.environment
           : "sea",
       boatLevel:
         (parsed.boatLevel === 2 || parsed.boatLevel === 3) &&
@@ -153,16 +155,16 @@ export function addLights(amount: number): number {
   return next;
 }
 
-/** Load unlocked environment modes ("sea" is always available as base mode). */
+/** Load unlocked environment modes ("sea" and "canal" are unlocked by default). */
 export function loadUnlockedModes(): EnvironmentMode[] {
-  if (TEST_UNLOCK_MANGROVE) return ["sea", "mangrove"];
-  const base: EnvironmentMode[] = ["sea"];
+  if (TEST_UNLOCK_MANGROVE) return ["sea", "mangrove", "canal"];
+  const base: EnvironmentMode[] = ["sea", "canal"];
   try {
     const raw = localStorage.getItem(UNLOCKED_KEY);
     if (!raw) return base;
     const parsed = JSON.parse(raw);
     if (Array.isArray(parsed) && parsed.includes("mangrove")) {
-      return ["sea", "mangrove"];
+      return ["sea", "mangrove", "canal"];
     }
     return base;
   } catch {
@@ -185,7 +187,7 @@ export function unlockMangroveWithLights(cost = MANGROVE_UNLOCK_COST): {
     return { ok: false, balance: currentBalance, unlocked: currentUnlocked };
   }
   const nextBalance = currentBalance - cost;
-  const nextUnlocked: EnvironmentMode[] = ["sea", "mangrove"];
+  const nextUnlocked: EnvironmentMode[] = ["sea", "mangrove", "canal"];
   try {
     localStorage.setItem(LIGHTS_KEY, String(nextBalance));
     localStorage.setItem(UNLOCKED_KEY, JSON.stringify(nextUnlocked));

@@ -260,6 +260,11 @@ function ScoreList({
                 Mangrove
               </span>
             )}
+            {e.env === "canal" && (
+              <span className="rounded bg-amber/15 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider text-amber">
+                Canal
+              </span>
+            )}
             <span className="ml-auto whitespace-nowrap text-[11px] text-foam/45">
               {e.d}m · {formatDate(e.t)}
             </span>
@@ -1168,7 +1173,7 @@ export default function App() {
           ) : (
             /* ------------------------- MODE SELECTION SCREEN ------------------------- */
             <div className="flex min-h-full flex-col items-center justify-center px-4 pb-8 pt-24 md:py-16">
-              <div className="anim-fadeUp w-full max-w-4xl">
+              <div className="anim-fadeUp w-full max-w-6xl">
                 <div className="mb-6 text-center">
                   <div className="text-[10px] font-semibold uppercase tracking-[0.34em] text-amber/85">
                     Select Environment
@@ -1178,7 +1183,7 @@ export default function App() {
                   </h2>
                 </div>
 
-                <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
+                <div className="grid grid-cols-1 gap-5 md:grid-cols-3">
                   {/* Card 1: Sea Mode */}
                   <div
                     onMouseEnter={() => setPreviewMode("sea")}
@@ -1360,6 +1365,53 @@ export default function App() {
                       )}
                     </div>
                   </div>
+
+                  {/* Card 3: Canal Mode */}
+                  <div
+                    onMouseEnter={() => setPreviewMode("canal")}
+                    onFocus={() => setPreviewMode("canal")}
+                    className={`group relative flex flex-col overflow-hidden rounded-3xl border bg-[#14171d]/84 backdrop-blur-md transition-all duration-300 ${
+                      previewMode === "canal"
+                        ? "border-amber/80 shadow-[0_12px_45px_rgba(255,180,84,0.24)]"
+                        : "border-foam/15 hover:border-amber/50"
+                    }`}
+                  >
+                    {/* Historic Canal visual preview banner */}
+                    <div className="relative h-48 sm:h-52 w-full overflow-hidden bg-[#14171d]">
+                      <div className="h-full w-full transition-transform duration-700 ease-out group-hover:scale-[1.03]">
+                        <EnvironmentPreview mode="canal" className="h-full w-full" />
+                      </div>
+                      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_top,transparent_48%,rgba(16,18,24,0.52)_100%)]" />
+                      <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-amber/35 to-transparent" />
+                      <div className="pointer-events-none absolute inset-x-0 bottom-0 h-20 bg-gradient-to-t from-[#14171d] via-[#14171d]/65 to-transparent" />
+
+                      <div className="absolute left-4 top-4 inline-flex items-center gap-1.5 rounded-full border border-emerald-400/45 bg-[#051a1d]/80 px-3 py-1 text-[10px] font-bold uppercase tracking-widest text-emerald-300 shadow-[0_4px_16px_rgba(0,0,0,0.45)] backdrop-blur-md">
+                        <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 shadow-[0_0_8px_#34d399]" />
+                        Unlocked
+                      </div>
+                      <div className="pointer-events-none absolute bottom-3.5 left-5 right-5 flex items-center justify-between text-[10px] font-semibold uppercase tracking-[0.16em] text-amber/85">
+                        <span className="rounded-full border border-amber/25 bg-[#12151c]/75 px-2.5 py-0.5 backdrop-blur-xs">
+                          Historic Canal
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="relative z-10 flex flex-1 flex-col justify-center px-6 py-4">
+                      <div className="flex items-center justify-between gap-3">
+                        <h3 className="font-display text-xl font-black leading-none tracking-wide text-foam">
+                          Canal Mode
+                        </h3>
+                        <button
+                          type="button"
+                          onClick={() => startMode("canal")}
+                          aria-label="Play Canal Mode"
+                          className="btn-primary flex h-11 w-14 shrink-0 items-center justify-center rounded-xl"
+                        >
+                          {I.play("h-5 w-5")}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
                 </div>
 
                 {/* Boat Garage Bar */}
@@ -1454,7 +1506,13 @@ export default function App() {
             {/* Score */}
             <div className="mt-4">
               <div className="inline-flex items-center gap-1.5 rounded-full border border-foam/10 bg-foam/[0.04] px-3 py-0.5 text-[10px] font-semibold tracking-wider text-foam/60">
-                <span>{final.environment === "mangrove" ? "Enchanted Mangrove" : "Sea Mode"}</span>
+                <span>
+                  {final.environment === "mangrove"
+                    ? "Enchanted Mangrove"
+                    : final.environment === "canal"
+                      ? "Canal Mode"
+                      : "Sea Mode"}
+                </span>
               </div>
 
               <div className="mt-2 font-display text-5xl font-black text-amber [text-shadow:0_0_35px_rgba(255,180,84,0.45)] sm:text-6xl">
