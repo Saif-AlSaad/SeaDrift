@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { App as CapApp } from "@capacitor/app";
 import { Capacitor } from "@capacitor/core";
 import { BoatPreview } from "./components/BoatPreview";
 import { EnvironmentPreview } from "./components/EnvironmentPreview";
@@ -6,6 +7,7 @@ import { BOAT_SPECS, type BoatLevel } from "./game/boatSkins";
 import { COMBO_WINDOW, GameEngine } from "./game/engine";
 import type { AlertData, GameState, PopupData, RunStats } from "./game/engine";
 import { GameAudio } from "./game/audio";
+import { APP_BUILD_VERSION, applyAppUpdate, checkForAppUpdate, type UpdateInfo } from "./game/updater";
 import {
   MANGROVE_UNLOCK_COST,
   addLights,
@@ -20,7 +22,6 @@ import {
   saveSettings,
   unlockBoatWithLights,
   unlockMangroveWithLights,
-  type Difficulty,
   type EnvironmentMode,
   type GameSettings,
   type QualitySetting,
@@ -127,12 +128,6 @@ const I = {
       <path d="M17.52 14.34c-.55 0-1-.45-1-1s.45-1 1-1 1 .45 1 1-.45 1-1 1m-11.04 0c-.55 0-1-.45-1-1s.45-1 1-1 1 .45 1 1-.45 1-1 1m11.4-6.02l2-3.46a.42.42 0 00-.15-.57.42.42 0 00-.57.15l-2.02 3.5A11.7 11.7 0 0012 8.08c-1.85 0-3.59.33-5.14.87L4.84 5.45a.42.42 0 00-.57-.15.42.42 0 00-.15.57l2 3.46C2.69 11.19.34 14.66 0 18.76h24c-.34-4.1-2.69-7.57-6.12-9.44" />
     </svg>
   ),
-  flag: (c = "") => (
-    <svg viewBox="0 0 24 24" className={c} fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z" />
-      <line x1="4" y1="22" x2="4" y2="15" />
-    </svg>
-  ),
   monitor: (c = "") => (
     <svg viewBox="0 0 24 24" className={c} fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <rect x="2" y="3" width="20" height="14" rx="2" ry="2" />
@@ -190,24 +185,6 @@ const SAFE_TR = {
   top: "max(1rem, env(safe-area-inset-top))",
   right: "max(1rem, env(safe-area-inset-right))",
 } as const;
-
-const DIFF_INFO: Record<Difficulty, { label: string; desc: string; mult: string }> = {
-  calm: {
-    label: "Calm",
-    desc: "1.0× Difficulty · Relaxed cruise with forgiving lamp drain, steady wisps, and open seas.",
-    mult: "1.0×",
-  },
-  standard: {
-    label: "Standard",
-    desc: "1.4× Difficulty · Balanced voyage with active steering, fair hazard pacing, and 1.4× score.",
-    mult: "1.4×",
-  },
-  tempest: {
-    label: "Tempest",
-    desc: "1.9× Difficulty · High-speed storm sailing, swift squalls, intense thrills, and 1.9× score.",
-    mult: "1.9×",
-  },
-};
 
 /* ------------------------------ small pieces ------------------------------ */
 
@@ -278,11 +255,6 @@ function ScoreList({
             <span className="font-display text-[13px] tracking-wide text-foam">
               {e.s.toLocaleString("en-US")}
             </span>
-            {e.m && (
-              <span className="rounded bg-foam/[0.07] px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider text-foam/55">
-                {e.m}
-              </span>
-            )}
             {e.env === "mangrove" && (
               <span className="rounded bg-emerald-500/15 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider text-emerald-300">
                 Mangrove
@@ -330,6 +302,10 @@ export default function App() {
   const [unlockPhase, setUnlockPhase] = useState<"idle" | "gathering" | "gateway" | "revealed">("idle");
   const [confirmClear, setConfirmClear] = useState(false);
   const [isFs, setIsFs] = useState(false);
+  const [pendingUpdate, setPendingUpdate] = useState<UpdateInfo | null>(null);
+  const [updateDismissed, setUpdateDismissed] = useState(false);
+  const [updatePhase, setUpdatePhase] = useState<"idle" | "checking" | "downloading" | "error">("idle");
+  const [updateStatusMsg, setUpdateStatusMsg] = useState<string | null>(null);
   const histArmed = useRef(false);
   const settledRunId = useRef(0);
 
@@ -362,10 +338,83 @@ export default function App() {
   modalRef.current = modal;
   const unlockPhaseRef = useRef(unlockPhase);
   unlockPhaseRef.current = unlockPhase;
+  const updateVisible =
+    !!pendingUpdate &&
+    !updateDismissed &&
+    (state === "menu" || state === "gameover") &&
+    modal === "none" &&
+    unlockPhase === "idle";
+  const updateVisibleRef = useRef(updateVisible);
+  updateVisibleRef.current = updateVisible;
 
   useEffect(() => {
-    engineRef.current?.setModalOpen(modal !== "none" || unlockPhase !== "idle");
-  }, [modal, unlockPhase]);
+    engineRef.current?.setModalOpen(modal !== "none" || unlockPhase !== "idle" || updateVisible);
+  }, [modal, unlockPhase, updateVisible]);
+
+  useEffect(() => {
+    if (!IS_NATIVE) return;
+    let active = true;
+    const runCheck = async () => {
+      const res = await checkForAppUpdate();
+      if (!active || !res.available) return;
+      setPendingUpdate((prev) => {
+        if (!prev || prev.version !== res.info.version) {
+          setUpdateDismissed(false);
+        }
+        return res.info;
+      });
+    };
+
+    const bootId = window.setTimeout(() => void runCheck(), 1400);
+    const onOnline = () => void runCheck();
+    window.addEventListener("online", onOnline);
+    const resumeSub = Capacitor.isPluginAvailable("App")
+      ? CapApp.addListener("appStateChange", ({ isActive }) => {
+          if (isActive) void runCheck();
+        }).catch(() => null)
+      : null;
+
+    return () => {
+      active = false;
+      window.clearTimeout(bootId);
+      window.removeEventListener("online", onOnline);
+      void resumeSub?.then((h) => h?.remove()).catch(() => {});
+    };
+  }, []);
+
+  const manualCheckUpdate = async () => {
+    blurActive();
+    audioRef.current?.click();
+    setUpdatePhase("checking");
+    setUpdateStatusMsg(null);
+    const res = await checkForAppUpdate();
+    if (res.available) {
+      setPendingUpdate(res.info);
+      setUpdateDismissed(false);
+      setUpdatePhase("idle");
+      setModal("none");
+    } else if (res.reason === "offline") {
+      setUpdatePhase("idle");
+      setUpdateStatusMsg("Offline — connect to internet to check");
+    } else {
+      setUpdatePhase("idle");
+      setUpdateStatusMsg("You are on the latest version");
+    }
+  };
+
+  const confirmApplyUpdate = async () => {
+    if (!pendingUpdate || updatePhase === "downloading") return;
+    blurActive();
+    audioRef.current?.click();
+    setUpdatePhase("downloading");
+    setUpdateStatusMsg(null);
+    try {
+      await applyAppUpdate(pendingUpdate);
+    } catch {
+      setUpdatePhase("error");
+      setUpdateStatusMsg("Download failed. Check your connection and try again.");
+    }
+  };
 
   useEffect(() => {
     if (state !== "menu") return;
@@ -437,7 +486,6 @@ export default function App() {
           w: stats.wisps,
           d: stats.dist,
           c: stats.maxCombo,
-          m: stats.difficulty,
           env: stats.environment,
           t: Date.now(),
         };
@@ -535,6 +583,11 @@ export default function App() {
       };
       if (unlockPhaseRef.current !== "idle") {
         if (unlockPhaseRef.current === "revealed") setUnlockPhase("idle");
+        rearm();
+        return;
+      }
+      if (updateVisibleRef.current) {
+        setUpdateDismissed(true);
         rearm();
         return;
       }
@@ -1096,15 +1149,8 @@ export default function App() {
                     PLAY
                   </button>
 
-                  <div className="flex flex-wrap items-center justify-center gap-2">
-                    <button
-                      onClick={() => openModal("settings")}
-                      className="inline-flex items-center gap-1.5 rounded-full border border-foam/18 bg-[#05141a]/65 px-3.5 py-1 text-xs font-medium text-foam/80 transition-colors hover:border-foam/35 hover:text-foam"
-                    >
-                      <span className="h-1.5 w-1.5 rounded-full bg-lumen" />
-                      {DIFF_INFO[settings.difficulty].label} ({DIFF_INFO[settings.difficulty].mult})
-                    </button>
-                    {best > 0 && (
+                  {best > 0 && (
+                    <div className="flex flex-wrap items-center justify-center gap-2">
                       <button
                         onClick={() => openModal("scores")}
                         className="inline-flex items-center gap-1.5 rounded-full border border-amber/40 bg-amber/10 px-3.5 py-1 text-xs font-semibold tracking-wider text-amber transition-colors hover:bg-amber/20"
@@ -1112,8 +1158,8 @@ export default function App() {
                         {I.flame("h-3.5 w-3.5")}
                         BEST {best.toLocaleString("en-US")}
                       </button>
-                    )}
-                  </div>
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -1409,8 +1455,6 @@ export default function App() {
             <div className="mt-4">
               <div className="inline-flex items-center gap-1.5 rounded-full border border-foam/10 bg-foam/[0.04] px-3 py-0.5 text-[10px] font-semibold tracking-wider text-foam/60">
                 <span>{final.environment === "mangrove" ? "Enchanted Mangrove" : "Sea Mode"}</span>
-                <span className="text-foam/30">·</span>
-                <span>{DIFF_INFO[final.difficulty].label}</span>
               </div>
 
               <div className="mt-2 font-display text-5xl font-black text-amber [text-shadow:0_0_35px_rgba(255,180,84,0.45)] sm:text-6xl">
@@ -2059,85 +2103,7 @@ export default function App() {
               </div>
 
               <div className="space-y-4">
-                {/* 1. Difficulty */}
-                <div>
-                  <div className="mb-2.5 flex items-center gap-2 text-sm font-bold text-white">
-                    {I.flag("h-4 w-4 text-amber")}
-                    <span>Difficulty</span>
-                  </div>
-                  <div className="grid grid-cols-3 gap-3">
-                    {[
-                      {
-                        id: "calm" as Difficulty,
-                        label: "Calm",
-                        wave: (
-                          <path
-                            d="M 4 12 C 16 7, 24 15, 38 10 C 48 7, 52 12, 56 12"
-                            fill="none"
-                            stroke="currentColor"
-                            strokeWidth="2.2"
-                            strokeLinecap="round"
-                          />
-                        ),
-                      },
-                      {
-                        id: "standard" as Difficulty,
-                        label: "Standard",
-                        wave: (
-                          <path
-                            d="M 4 12 C 10 5, 15 5, 21 12 C 27 19, 32 19, 38 12 C 44 5, 49 5, 56 12"
-                            fill="none"
-                            stroke="currentColor"
-                            strokeWidth="2.2"
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                          />
-                        ),
-                      },
-                      {
-                        id: "tempest" as Difficulty,
-                        label: "Tempest",
-                        wave: (
-                          <path
-                            d="M 4 13 C 8 13, 11 5, 15 5 C 19 16, 22 16, 26 8 C 30 1, 33 18, 38 18 C 42 4, 46 14, 50 14 C 53 14, 54 8, 56 12"
-                            fill="none"
-                            stroke="currentColor"
-                            strokeWidth="2.2"
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                          />
-                        ),
-                      },
-                    ].map((d) => {
-                      const active = settings.difficulty === d.id;
-                      return (
-                        <button
-                          key={d.id}
-                          type="button"
-                          onClick={() => updateSettings({ difficulty: d.id })}
-                          className={`group relative flex flex-col items-center justify-center rounded-2xl py-4 px-2 transition-all duration-200 ${
-                            active
-                              ? "border border-amber/80 bg-[#122026] text-amber shadow-[0_0_16px_rgba(255,180,84,0.18)]"
-                              : "border border-[#1b2b33] bg-[#0c161c] text-foam/60 hover:border-foam/25 hover:text-foam"
-                          }`}
-                        >
-                          <svg viewBox="0 0 60 22" className="h-5 w-12 stroke-current mb-2.5">
-                            {d.wave}
-                          </svg>
-                          <span
-                            className={`text-sm tracking-wide ${
-                              active ? "font-bold text-amber" : "font-semibold text-foam/80"
-                            }`}
-                          >
-                            {d.label}
-                          </span>
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-
-                {/* 2. Audio Volume Slider */}
+                {/* 1. Audio Volume Slider */}
                 <div className="flex items-center gap-3.5 py-1">
                   <button
                     type="button"
@@ -2284,8 +2250,8 @@ export default function App() {
                   </div>
                 )}
 
-                {/* 6. Android App Download */}
-                {!IS_NATIVE && (
+                {/* 6. Android App Download / Offline Updates */}
+                {!IS_NATIVE ? (
                   <div className="flex items-center justify-between rounded-2xl border border-teal-500/30 bg-[#0c1c1f]/80 px-4 py-3.5">
                     <div className="flex items-center gap-2.5 text-sm font-bold text-white">
                       {I.phone("h-4 w-4 text-teal-400")}
@@ -2299,6 +2265,31 @@ export default function App() {
                       {I.download("h-3.5 w-3.5 text-teal-300")}
                       <span>Get APK</span>
                     </a>
+                  </div>
+                ) : (
+                  <div className="rounded-2xl border border-teal-500/30 bg-[#0c1c1f]/80 px-4 py-3">
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <div className="flex items-center gap-2 text-sm font-bold text-white">
+                          {I.download("h-4 w-4 text-teal-400")}
+                          <span>App Updates</span>
+                        </div>
+                        <div className="mt-0.5 text-[11px] text-foam/50">
+                          Build {APP_BUILD_VERSION} · Records stay safe
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        disabled={updatePhase === "checking"}
+                        onClick={() => void manualCheckUpdate()}
+                        className="flex items-center gap-1.5 rounded-xl border border-teal-500/40 bg-teal-950/60 px-3.5 py-1.5 text-xs font-bold text-teal-300 transition-all hover:border-teal-400 hover:bg-teal-900/60 disabled:opacity-50"
+                      >
+                        {updatePhase === "checking" ? "Checking..." : "Check"}
+                      </button>
+                    </div>
+                    {updateStatusMsg && (
+                      <div className="mt-2 text-[11px] font-medium text-amber/90">{updateStatusMsg}</div>
+                    )}
                   </div>
                 )}
 
@@ -2336,6 +2327,61 @@ export default function App() {
                 className="mt-5 w-full rounded-2xl bg-[#f5a75b] py-3.5 text-sm font-bold text-[#121c22] shadow-[0_0_20px_rgba(245,167,91,0.35)] transition-all hover:brightness-105 active:scale-[0.99]"
               >
                 Done
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ------------------------- ANDROID OTA UPDATE PROMPT ------------------------- */}
+      {updateVisible && (
+        <div
+          className="anim-modal-backdrop fixed inset-0 z-40 flex items-center justify-center bg-ink/80 px-4 backdrop-blur-md"
+          onClick={() => {
+            if (updatePhase !== "downloading") setUpdateDismissed(true);
+          }}
+        >
+          <div
+            className="glass-modal anim-modal-card w-full max-w-sm border-[#43E6C1]/40 bg-[#061820]/95 p-6 text-center shadow-[0_24px_80px_rgba(0,0,0,0.85)]"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl border border-[#43E6C1]/40 bg-[#43E6C1]/12 text-[#43E6C1]">
+              {I.download("h-6 w-6")}
+            </div>
+
+            <div className="mt-3 text-[10px] font-bold uppercase tracking-[0.26em] text-[#43E6C1]">
+              Update Available
+            </div>
+            <h2 className="mt-1 font-display text-xl font-black tracking-wide text-foam">
+              New SeaDrift Changes
+            </h2>
+            <p className="mt-2.5 text-xs leading-relaxed text-foam/75">
+              A new update is available. Update now to apply the latest changes—all your Lights, boats, and high scores will stay safe.
+            </p>
+
+            {updatePhase === "error" && updateStatusMsg && (
+              <div className="mt-3 rounded-xl border border-ember/40 bg-ember/15 px-3 py-2 text-[11px] font-medium text-[#ffb5a0]">
+                {updateStatusMsg}
+              </div>
+            )}
+
+            <div className="mt-5 flex flex-col gap-2.5 sm:flex-row">
+              <button
+                type="button"
+                disabled={updatePhase === "downloading"}
+                onClick={() => void confirmApplyUpdate()}
+                className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-gradient-to-b from-[#43E6C1] to-[#1aa88a] py-3 text-xs font-bold uppercase tracking-[0.16em] text-[#031915] shadow-[0_6px_24px_rgba(67,230,193,0.35)] transition-all hover:brightness-105 disabled:opacity-60"
+              >
+                {I.download("h-4 w-4")}
+                {updatePhase === "downloading" ? "Updating..." : "Update Now"}
+              </button>
+              <button
+                type="button"
+                disabled={updatePhase === "downloading"}
+                onClick={() => setUpdateDismissed(true)}
+                className="btn-ghost flex-1 py-3 text-xs font-semibold tracking-wider disabled:opacity-40"
+              >
+                Later
               </button>
             </div>
           </div>

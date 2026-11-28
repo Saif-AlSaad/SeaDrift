@@ -10,7 +10,7 @@ import { OutputPass } from "three/examples/jsm/postprocessing/OutputPass.js";
 import { mergeVertices } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import type { GameAudio } from "./audio";
 import { addBoatDecor, BOAT_SPECS, makeBoatSkin, makeHullShape, sailPlan, type BoatLevel } from "./boatSkins";
-import type { Difficulty, EnvironmentMode, GameSettings } from "./storage";
+import { MODE_DIFFICULTY_MULT, type EnvironmentMode, type GameSettings } from "./storage";
 import {
   makeFishScaleTexture,
   makeTunaGeometry,
@@ -63,7 +63,7 @@ export interface RunStats {
   wisps: number;
   dist: number;
   maxCombo: number;
-  difficulty: Difficulty;
+  difficultyMult: number;
   environment: EnvironmentMode;
 }
 
@@ -107,113 +107,32 @@ const damp = THREE.MathUtils.damp;
 const lerp = THREE.MathUtils.lerp;
 const smooth = THREE.MathUtils.smoothstep;
 
-interface DiffTune {
-  baseSpeed: number;
-  maxExtraSpeed: number;
-  baseDrain: number;
-  extraDrain: number;
-  stormDrain: number;
-  amberFuel: number;
-  tealFuel: number;
-  wispGapBase: number;
-  wispGapExtra: number;
-  wispClusterMin: number;
-  wispClusterMax: number;
-  magnetPull: number;
-  magnetRange: number;
-  catchReach: number;
-  rockPaceStart: number;
-  rockPaceEnd: number;
-  mineUnlock: number;
-  minePaceStart: number;
-  minePaceEnd: number;
-  logUnlock: number;
-  waveUnlock: number;
-  whirlUnlock: number;
-  stormStart: number;
-  scoreMultiplier: number;
-}
-
-const DIFF_TUNING: Record<Difficulty, DiffTune> = {
-  calm: {
-    baseSpeed: 16.5,
-    maxExtraSpeed: 11.0,
-    baseDrain: 2.8,
-    extraDrain: 2.0,
-    stormDrain: 0.5,
-    amberFuel: 5.5,
-    tealFuel: 9.0,
-    wispGapBase: 32,
-    wispGapExtra: 10,
-    wispClusterMin: 2,
-    wispClusterMax: 4,
-    magnetPull: 2.4,
-    magnetRange: 3.4,
-    catchReach: 2.4,
-    rockPaceStart: 2.8,
-    rockPaceEnd: 1.5,
-    mineUnlock: 24,
-    minePaceStart: 9.0,
-    minePaceEnd: 5.5,
-    logUnlock: 30,
-    waveUnlock: 38,
-    whirlUnlock: 48,
-    stormStart: 56,
-    scoreMultiplier: 1.0,
-  },
-  standard: {
-    baseSpeed: 18.2,
-    maxExtraSpeed: 14.0,
-    baseDrain: 3.8,
-    extraDrain: 2.8,
-    stormDrain: 0.8,
-    amberFuel: 4.2,
-    tealFuel: 6.8,
-    wispGapBase: 40,
-    wispGapExtra: 14,
-    wispClusterMin: 1,
-    wispClusterMax: 3,
-    magnetPull: 1.6,
-    magnetRange: 2.6,
-    catchReach: 2.15,
-    rockPaceStart: 2.2,
-    rockPaceEnd: 1.1,
-    mineUnlock: 14,
-    minePaceStart: 6.8,
-    minePaceEnd: 3.8,
-    logUnlock: 20,
-    waveUnlock: 26,
-    whirlUnlock: 34,
-    stormStart: 42,
-    scoreMultiplier: 1.4,
-  },
-  tempest: {
-    baseSpeed: 20.2,
-    maxExtraSpeed: 17.0,
-    baseDrain: 4.8,
-    extraDrain: 3.6,
-    stormDrain: 1.1,
-    amberFuel: 3.4,
-    tealFuel: 5.5,
-    wispGapBase: 46,
-    wispGapExtra: 16,
-    wispClusterMin: 1,
-    wispClusterMax: 3,
-    magnetPull: 1.2,
-    magnetRange: 2.1,
-    catchReach: 1.95,
-    rockPaceStart: 1.75,
-    rockPaceEnd: 0.85,
-    mineUnlock: 9,
-    minePaceStart: 5.0,
-    minePaceEnd: 2.8,
-    logUnlock: 14,
-    waveUnlock: 18,
-    whirlUnlock: 24,
-    stormStart: 30,
-    scoreMultiplier: 1.9,
-  },
-};
+/** Baseline gameplay tuning (Sea Mode = 1.0x; Enchanted Mangrove scales by MODE_DIFFICULTY_MULT = 1.3x). */
+const BASE_TUNING = {
+  baseSpeed: 18.2,
+  maxExtraSpeed: 14.0,
+  baseDrain: 3.8,
+  extraDrain: 2.8,
+  stormDrain: 0.8,
+  amberFuel: 4.2,
+  tealFuel: 6.8,
+  wispGapBase: 40,
+  wispGapExtra: 14,
+  wispClusterMin: 1,
+  wispClusterMax: 3,
+  magnetPull: 1.6,
+  magnetRange: 2.6,
+  catchReach: 2.15,
+  rockPaceStart: 2.2,
+  rockPaceEnd: 1.1,
+  mineUnlock: 14,
+  minePaceStart: 6.8,
+  minePaceEnd: 3.8,
+  logUnlock: 20,
+  waveUnlock: 26,
+  whirlUnlock: 34,
+  stormStart: 42,
+} as const;
 
 /* ---------------- shared wave field (GLSL + JS must match) ---------------- */
 
@@ -937,10 +856,13 @@ export class GameEngine {
   private wakeLock: { release: () => Promise<void> } | null = null;
   private resizeObs: ResizeObserver | null = null;
 
-  // settings & difficulty
-  private difficulty: Difficulty = "standard";
+  // settings & mode difficulty
   private environment: EnvironmentMode = "sea";
   private screenShakeEnabled = true;
+
+  private get diffMult(): number {
+    return MODE_DIFFICULTY_MULT[this.environment];
+  }
 
   // run state
   private t = 0;
@@ -1177,7 +1099,6 @@ export class GameEngine {
   }
 
   applySettings(s: GameSettings) {
-    this.difficulty = s.difficulty;
     const prevEnv = this.environment;
     this.environment = s.environment ?? "sea";
     this.screenShakeEnabled = s.screenShake;
@@ -1217,7 +1138,7 @@ export class GameEngine {
     if (this.state === "playing") return;
     if (overrideEnv) this.environment = overrideEnv;
     this.runId++;
-    const tune = DIFF_TUNING[this.difficulty];
+    const mult = this.diffMult;
     this.clearEntities();
     this.syncEnvironmentVisuals(true);
     this.score = 0;
@@ -1227,22 +1148,22 @@ export class GameEngine {
     this.energy = 100;
     this.wispsCaught = 0;
     this.runTime = 0;
-    this.speed = tune.baseSpeed;
+    this.speed = BASE_TUNING.baseSpeed * (1 + (mult - 1) * 0.35);
     this.timeScale = 1;
     this.slowmoT = 0;
     this.invulnT = 0;
     this.shake = 0;
     this.patternTimer = 0.9;
-    this.rockTimer = 2.6;
-    this.mineTimer = tune.mineUnlock;
-    this.logTimer = tune.logUnlock;
-    this.waveTimer = tune.waveUnlock;
-    this.whirlTimer = tune.whirlUnlock;
+    this.rockTimer = 2.6 / mult;
+    this.mineTimer = BASE_TUNING.mineUnlock / mult;
+    this.logTimer = BASE_TUNING.logUnlock;
+    this.waveTimer = BASE_TUNING.waveUnlock;
+    this.whirlTimer = BASE_TUNING.whirlUnlock;
     this.jellyTimer = 15 + Math.random() * 6;
-    this.mTrunkTimer = 10;
-    this.mGatorTimer = 16;
-    this.mLilyMatTimer = 6.5;
-    this.mForkTimer = 25;
+    this.mTrunkTimer = 10 / mult;
+    this.mGatorTimer = 16 / mult;
+    this.mLilyMatTimer = 6.5 / mult;
+    this.mForkTimer = 25 / mult;
     this.mLilyDrag = 0;
     this.mLilyRustleCd = 0;
     this.waveAlertShown = false;
@@ -1250,7 +1171,7 @@ export class GameEngine {
     this.gatorAlertShown = false;
     this.forkAlertShown = false;
     this.stormOn = false;
-    this.stormTimer = tune.stormStart;
+    this.stormTimer = BASE_TUNING.stormStart;
     this.pushVx = 0;
     this.coreAmt = 0;
     this.mBankScrapeCd = 0;
@@ -3680,7 +3601,6 @@ export class GameEngine {
   }
 
   private spawnPattern(atZ?: number) {
-    const tune = DIFF_TUNING[this.difficulty];
     const isMangrove = this.environment === "mangrove";
     const bz = this.boat.position.z;
     const base = atZ ?? bz - (96 + Math.random() * 34);
@@ -3702,8 +3622,8 @@ export class GameEngine {
       }
       return;
     }
-    const span = tune.wispClusterMax - tune.wispClusterMin + 1;
-    const n = tune.wispClusterMin + Math.floor(Math.random() * span);
+    const span = BASE_TUNING.wispClusterMax - BASE_TUNING.wispClusterMin + 1;
+    const n = BASE_TUNING.wispClusterMin + Math.floor(Math.random() * span);
     const kind = Math.floor(Math.random() * 3);
     if (kind === 0) {
       for (let i = 0; i < n; i++) this.spawnWisp(lane, base - i * 8.2);
@@ -3977,7 +3897,7 @@ export class GameEngine {
     g.passed = false;
     g.x = side * (7.5 + Math.random() * 5.0);
     g.z = this.boat.position.z - (102 + Math.random() * 26);
-    g.vx = -side * (3.5 + d * 2.2 + Math.random() * 1.0);
+    g.vx = -side * (3.5 + d * 2.2 + Math.random() * 1.0) * this.diffMult;
     g.phase = Math.random() * Math.PI * 2;
     g.rig.group.visible = true;
     if (!this.gatorAlertShown) {
@@ -4245,14 +4165,14 @@ export class GameEngine {
     this.lanternPulse = 1;
 
     if (!scoring) return;
-    const tune = DIFF_TUNING[this.difficulty];
+    const mult = this.diffMult;
     this.wispsCaught++;
-    const gained = Math.round((w.teal ? 30 : 12) * this.combo * tune.scoreMultiplier);
+    const gained = Math.round((w.teal ? 30 : 12) * this.combo * mult);
     this.score += gained;
     this.combo = Math.min(this.combo + 1, 12);
     this.maxCombo = Math.max(this.maxCombo, this.combo);
     this.comboT = COMBO_WINDOW;
-    this.energy = Math.min(100, this.energy + (w.teal ? tune.tealFuel : tune.amberFuel));
+    this.energy = Math.min(100, this.energy + (w.teal ? BASE_TUNING.tealFuel : BASE_TUNING.amberFuel));
     if (this.environment === "mangrove") {
       this.mSwarmChain++;
       if (this.mSwarmChain >= 2) {
@@ -4275,7 +4195,7 @@ export class GameEngine {
   private damage(amount: number, shake: number, wx: number, wz: number) {
     if (this.state !== "playing") return;
     const hpMult = BOAT_SPECS[this.boatLevel].hpMult;
-    const effective = Math.max(1, Math.round(amount / hpMult));
+    const effective = Math.max(1, Math.round((amount * this.diffMult) / hpMult));
     this.haptic(effective >= 22 ? [45, 35, 70] : 40);
     this.invulnT = 1.0;
     if (!this.godMode) this.energy = Math.max(0, this.energy - effective);
@@ -4293,8 +4213,7 @@ export class GameEngine {
 
   private closeCall() {
     if (this.state !== "playing" || this.invulnT > 0) return;
-    const tune = DIFF_TUNING[this.difficulty];
-    const bonus = Math.round(45 * this.combo * tune.scoreMultiplier);
+    const bonus = Math.round(45 * this.combo * this.diffMult);
     this.score += bonus;
     this.energy = Math.min(100, this.energy + 1.5);
     this.audio.closeCall();
@@ -4421,8 +4340,7 @@ export class GameEngine {
   private catchJelly(j: Jelly) {
     j.active = false;
     j.group.visible = false;
-    const tune = DIFF_TUNING[this.difficulty];
-    const gained = Math.round(300 * tune.scoreMultiplier);
+    const gained = Math.round(300 * this.diffMult);
     this.score += gained;
     this.energy = Math.min(100, this.energy + 20);
     this.slowmoT = 1.1;
@@ -4454,7 +4372,7 @@ export class GameEngine {
       wisps: this.wispsCaught,
       dist: Math.floor(-this.boat.position.z / 10),
       maxCombo: this.maxCombo,
-      difficulty: this.difficulty,
+      difficultyMult: this.diffMult,
       environment: this.environment,
     });
   }
@@ -4493,7 +4411,7 @@ export class GameEngine {
     const U = this.U;
     U.uTime.value = this.t;
 
-    const tune = DIFF_TUNING[this.difficulty];
+    const mult = this.diffMult;
     const boat = this.boat;
     const menu = this.state === "menu";
     const over = this.state === "gameover";
@@ -4523,7 +4441,9 @@ export class GameEngine {
     }
     this.storm = damp(this.storm, this.stormOn ? 1 : 0, 0.6, rawDt);
     if (this.storm < 0.002 && !this.stormOn) this.storm = 0;
-    this.amp = isMangrove ? 0.36 + this.storm * 0.2 + d * 0.05 : 1 + this.storm * 0.8 + d * 0.16;
+    this.amp =
+      (isMangrove ? 0.36 + this.storm * 0.2 + d * 0.05 : 1 + this.storm * 0.8 + d * 0.16) *
+      mult;
     this.flash *= Math.exp(-5.5 * rawDt);
     if (this.flash < 0.003) this.flash = 0;
     this.windX = this.storm * (isMangrove ? 2.4 : 7.8) * Math.sin(this.t * 0.45 + 1.3);
@@ -4550,10 +4470,12 @@ export class GameEngine {
     if (this.mLilyRustleCd > 0) this.mLilyRustleCd = Math.max(0, this.mLilyRustleCd - dt);
     if (this.state === "playing") {
       const spec = BOAT_SPECS[this.boatLevel];
+      const speedDiff = 1 + (mult - 1) * 0.35;
       const swarmBoost = isMangrove ? 2.5 * smooth(this.mSwarmBoostT, 0, 0.85) : 0;
       const dragMult = isMangrove ? 1 - 0.38 * this.mLilyDrag : 1;
       this.speed =
-        (tune.baseSpeed + tune.maxExtraSpeed * Math.pow(d, 0.8) + swarmBoost) *
+        (BASE_TUNING.baseSpeed + BASE_TUNING.maxExtraSpeed * Math.pow(d, 0.8) + swarmBoost) *
+        speedDiff *
         spec.speedMult *
         dragMult;
     }
@@ -4725,7 +4647,7 @@ export class GameEngine {
       const inCore = dist < w.r * 0.44;
       if (inCore) {
         anyCore = true;
-        if (!this.godMode) this.energy -= 22 * dt;
+        if (!this.godMode) this.energy -= 22 * mult * dt;
         if (this.screenShakeEnabled) this.shake = Math.max(this.shake, 0.38);
         if (!w.inCore) {
           this.haptic(60);
@@ -4876,36 +4798,36 @@ export class GameEngine {
       this.patternTimer -= dt;
       if (this.patternTimer <= 0) {
         this.spawnPattern();
-        this.patternTimer = (tune.wispGapBase + d * tune.wispGapExtra + Math.random() * 14) / this.speed;
+        this.patternTimer = (BASE_TUNING.wispGapBase + d * BASE_TUNING.wispGapExtra + Math.random() * 14) / this.speed;
       }
       this.rockTimer -= dt;
       if (this.rockTimer <= 0) {
         this.spawnRocks(d);
-        const rockBase = lerp(tune.rockPaceStart, tune.rockPaceEnd, d);
-        this.rockTimer = (isMangrove ? rockBase * 1.22 : rockBase) + Math.random() * 0.55;
+        const rockBase = lerp(BASE_TUNING.rockPaceStart, BASE_TUNING.rockPaceEnd, d);
+        this.rockTimer = (isMangrove ? rockBase * 1.22 : rockBase) / mult + Math.random() * (0.55 / mult);
       }
-      if (this.runTime > tune.mineUnlock) {
+      if (this.runTime > BASE_TUNING.mineUnlock / mult) {
         this.mineTimer -= dt;
         if (this.mineTimer <= 0) {
           this.spawnMine(d);
-          this.mineTimer = lerp(tune.minePaceStart, tune.minePaceEnd, d) + Math.random() * 1.4;
+          this.mineTimer = lerp(BASE_TUNING.minePaceStart, BASE_TUNING.minePaceEnd, d) / mult + Math.random() * (1.4 / mult);
         }
       }
-      if (!isMangrove && this.runTime > tune.logUnlock) {
+      if (!isMangrove && this.runTime > BASE_TUNING.logUnlock) {
         this.logTimer -= dt;
         if (this.logTimer <= 0) {
           this.spawnLog();
           this.logTimer = lerp(6.8, 3.2, d) + Math.random() * 2.2;
         }
       }
-      if (!isMangrove && this.runTime > tune.waveUnlock) {
+      if (!isMangrove && this.runTime > BASE_TUNING.waveUnlock) {
         this.waveTimer -= dt;
         if (this.waveTimer <= 0) {
           this.spawnRogueWave(d);
           this.waveTimer = lerp(11, 6.2, d) + Math.random() * 3.0;
         }
       }
-      if (!isMangrove && this.runTime > tune.whirlUnlock) {
+      if (!isMangrove && this.runTime > BASE_TUNING.whirlUnlock) {
         this.whirlTimer -= dt;
         if (this.whirlTimer <= 0) {
           this.spawnWhirl();
@@ -4913,32 +4835,32 @@ export class GameEngine {
         }
       }
       if (isMangrove) {
-        if (this.runTime > 10) {
+        if (this.runTime > 10 / mult) {
           this.mTrunkTimer -= dt;
           if (this.mTrunkTimer <= 0) {
             this.spawnFallenTrunk(d);
-            this.mTrunkTimer = lerp(8.2, 4.8, d) + Math.random() * 2.2;
+            this.mTrunkTimer = lerp(8.2, 4.8, d) / mult + Math.random() * (2.2 / mult);
           }
         }
-        if (this.runTime > 16) {
+        if (this.runTime > 16 / mult) {
           this.mGatorTimer -= dt;
           if (this.mGatorTimer <= 0) {
             this.spawnGator(d);
-            this.mGatorTimer = lerp(9.4, 5.4, d) + Math.random() * 2.6;
+            this.mGatorTimer = lerp(9.4, 5.4, d) / mult + Math.random() * (2.6 / mult);
           }
         }
-        if (this.runTime > 6.5) {
+        if (this.runTime > 6.5 / mult) {
           this.mLilyMatTimer -= dt;
           if (this.mLilyMatTimer <= 0) {
             this.spawnLilyMat();
-            this.mLilyMatTimer = lerp(6.2, 3.8, d) + Math.random() * 1.8;
+            this.mLilyMatTimer = lerp(6.2, 3.8, d) / mult + Math.random() * (1.8 / mult);
           }
         }
-        if (this.runTime > 24) {
+        if (this.runTime > 24 / mult) {
           this.mForkTimer -= dt;
           if (this.mForkTimer <= 0) {
             this.spawnForkIslet();
-            this.mForkTimer = lerp(25, 18, d) + Math.random() * 5;
+            this.mForkTimer = lerp(25, 18, d) / mult + Math.random() * 5;
           }
         }
       }
@@ -4968,9 +4890,12 @@ export class GameEngine {
       }
 
       const hpMult = BOAT_SPECS[this.boatLevel].hpMult;
-      const drain = (tune.baseDrain + tune.extraDrain * d + this.storm * tune.stormDrain) / (1 + (hpMult - 1) * 0.45);
+      const drain =
+        ((BASE_TUNING.baseDrain + BASE_TUNING.extraDrain * d + this.storm * BASE_TUNING.stormDrain) *
+          mult) /
+        (1 + (hpMult - 1) * 0.45);
       if (!this.godMode) this.energy = Math.max(0, this.energy - drain * dt);
-      this.score += this.speed * dt * 0.5 * tune.scoreMultiplier;
+      this.score += this.speed * dt * 0.5 * mult;
       this.comboT = Math.max(0, this.comboT - dt);
       if (this.comboT <= 0 && this.combo > 1) this.combo = 1;
       this.invulnT = Math.max(0, this.invulnT - dt);
@@ -5006,8 +4931,8 @@ export class GameEngine {
         continue;
       }
       const dz = w.z - bz;
-      if (playing && !w.orbit && dz > -8 && dz < 0 && Math.abs(w.x - bx) < tune.magnetRange) {
-        w.x += clamp(bx - w.x, -1, 1) * tune.magnetPull * dt;
+      if (playing && !w.orbit && dz > -8 && dz < 0 && Math.abs(w.x - bx) < BASE_TUNING.magnetRange) {
+        w.x += clamp(bx - w.x, -1, 1) * BASE_TUNING.magnetPull * dt;
       }
       const wx = w.x + Math.sin(this.t * 0.7 + w.phase) * 0.3;
       w.group.position.set(
@@ -5018,7 +4943,7 @@ export class GameEngine {
       w.core.rotation.y += dt * 1.4;
       w.core.rotation.x += dt * 0.7;
       w.halo.scale.setScalar((w.teal ? 2.5 : 2.8) * (1 + Math.sin(this.t * 3 + w.phase) * 0.12));
-      const reach = playing ? tune.catchReach : 2.6;
+      const reach = playing ? BASE_TUNING.catchReach : 2.6;
       if ((playing || menu) && dz > -3.4 && dz < 3.4 && Math.abs(wx - bx) < reach) {
         this.catchWisp(w, playing);
       }

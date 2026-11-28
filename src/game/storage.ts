@@ -1,11 +1,17 @@
 import type { BoatLevel } from "./boatSkins";
+import { syncProgressBackup } from "./updater";
 
 export type { BoatLevel };
-export type Difficulty = "calm" | "standard" | "tempest";
 export type QualitySetting = "auto" | "high" | "medium" | "low";
 export type SunGlareSetting = "soft" | "minimal";
 export type TouchControl = "drag" | "follow" | "tilt";
 export type EnvironmentMode = "sea" | "mangrove";
+
+/** Fixed difficulty multipliers per game mode: Sea Mode = 1.0x, Mangrove Mode = 1.3x. */
+export const MODE_DIFFICULTY_MULT: Record<EnvironmentMode, number> = {
+  sea: 1.0,
+  mangrove: 1.3,
+};
 
 export const MANGROVE_UNLOCK_COST = 2000;
 /** Temporary flag to keep Enchanted Mangrove unlocked for testing; set false to re-enable 2,000-Lights gate. */
@@ -14,7 +20,6 @@ const TEST_UNLOCK_MANGROVE: boolean = true;
 export interface GameSettings {
   volume: number; // 0..1
   muted: boolean;
-  difficulty: Difficulty;
   quality: QualitySetting;
   sunGlare: SunGlareSetting;
   screenShake: boolean;
@@ -30,7 +35,7 @@ export interface ScoreEntry {
   w: number; // wisps caught
   d: number; // distance (m)
   c: number; // best combo
-  m?: Difficulty; // difficulty mode
+  m?: string; // legacy difficulty field
   env?: EnvironmentMode; // environment mode
   t: number; // timestamp
 }
@@ -46,7 +51,6 @@ const MAX_ENTRIES = 8;
 export const DEFAULT_SETTINGS: GameSettings = {
   volume: 0.8,
   muted: false,
-  difficulty: "standard",
   quality: "auto",
   sunGlare: "soft",
   screenShake: true,
@@ -72,12 +76,6 @@ export function loadSettings(): GameSettings {
           : DEFAULT_SETTINGS.volume,
       muted:
         typeof parsed.muted === "boolean" ? parsed.muted : DEFAULT_SETTINGS.muted,
-      difficulty:
-        parsed.difficulty === "calm" ||
-        parsed.difficulty === "standard" ||
-        parsed.difficulty === "tempest"
-          ? parsed.difficulty
-          : DEFAULT_SETTINGS.difficulty,
       quality:
         parsed.quality === "auto" ||
         parsed.quality === "high" ||
@@ -124,6 +122,7 @@ export function saveSettings(s: GameSettings) {
   try {
     localStorage.setItem(SETTINGS_KEY, JSON.stringify(s));
     localStorage.setItem(LEGACY_MUTE_KEY, s.muted ? "1" : "0");
+    void syncProgressBackup();
   } catch {
     /* ignore */
   }
@@ -147,6 +146,7 @@ export function addLights(amount: number): number {
   const next = loadLights() + delta;
   try {
     localStorage.setItem(LIGHTS_KEY, String(next));
+    void syncProgressBackup();
   } catch {
     /* ignore */
   }
@@ -189,6 +189,7 @@ export function unlockMangroveWithLights(cost = MANGROVE_UNLOCK_COST): {
   try {
     localStorage.setItem(LIGHTS_KEY, String(nextBalance));
     localStorage.setItem(UNLOCKED_KEY, JSON.stringify(nextUnlocked));
+    void syncProgressBackup();
   } catch {
     /* ignore */
   }
@@ -234,6 +235,7 @@ export function unlockBoatWithLights(
   try {
     localStorage.setItem(LIGHTS_KEY, String(nextBalance));
     localStorage.setItem(BOATS_KEY, JSON.stringify(nextUnlocked));
+    void syncProgressBackup();
   } catch {
     /* ignore */
   }
@@ -269,6 +271,7 @@ export function addScore(entry: ScoreEntry): {
     .slice(0, MAX_ENTRIES);
   try {
     localStorage.setItem(SCORES_KEY, JSON.stringify(list));
+    void syncProgressBackup();
   } catch {
     /* storage unavailable — play on */
   }
@@ -279,6 +282,7 @@ export function addScore(entry: ScoreEntry): {
 export function clearScores(): ScoreEntry[] {
   try {
     localStorage.removeItem(SCORES_KEY);
+    void syncProgressBackup();
   } catch {
     /* ignore */
   }
